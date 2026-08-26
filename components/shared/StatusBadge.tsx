@@ -1,10 +1,12 @@
 import React from "react";
 import {
-  CheckCircle2,
+  ShieldCheck,
+  AlertOctagon,
+  XCircle,
   Clock,
+  CheckCircle2,
   Truck,  
   AlertTriangle,
-  XCircle,
   ShieldAlert,
   PackageCheck,
 } from "lucide-react";
@@ -17,22 +19,15 @@ import { COLORS } from "@/lib/constants";
    Patient-facing copy: "Authentic" not "Valid", "Suspicious" not "Counterfeit".
 ----------------------------------------------------------------*/
 
-export type BatchStatus =
-  | "Valid"
-  | "Expired"
-  | "Recalled"
-  | "Pending"
-  | "Counterfeit";
-
 interface StatusBadgeProps {
-  status: BatchStatus;
+  status: BatchStatus | string;
   /** Use patient-friendly labels (default: true) */
   patientFacing?: boolean;
 }
 
 const CONFIG: Record<
-  BatchStatus,
-  { icon: typeof ShieldCheck; bg: string; color: string; label: string; patientLabel: string }
+  string,
+  { icon: React.ElementType; bg: string; color: string; label: string; patientLabel: string }
 > = {
   Valid: {
     icon: ShieldCheck,
@@ -62,21 +57,47 @@ const CONFIG: Record<
     label: "Expired",
     patientLabel: "Expired",
   },
+  PendingAcceptance: {
+    icon: Clock,
+    bg: "rgba(62, 54, 176, 0.1)",
+    color: COLORS.indigo,
+    label: "Pending Acceptance",
+    patientLabel: "Pending Registration",
+  },
   Pending: {
     icon: Clock,
     bg: "rgba(62, 54, 176, 0.1)",
     color: COLORS.indigo,
     label: "Pending",
-    patientLabel: "Pending Registration",
+    patientLabel: "Pending",
   },
+  InTransit: {
+    icon: Truck,
+    bg: "rgba(14, 165, 233, 0.12)",
+    color: "#0369A1",
+    label: "In Transit",
+    patientLabel: "In Transit",
+  },
+  Dispensed: {
+    icon: PackageCheck,
+    bg: "rgba(99, 102, 241, 0.12)",
+    color: "#4338CA",
+    label: "Dispensed",
+    patientLabel: "Dispensed to Patient",
+  }
 };
 
 export default function StatusBadge({
   status,
   patientFacing = true,
 }: StatusBadgeProps) {
-  const cfg = CONFIG[status];
-  if (!cfg) return null;
+  const cfg = CONFIG[status] || {
+    icon: Clock,
+    bg: "rgba(107, 114, 128, 0.12)",
+    color: "#374151",
+    label: status,
+    patientLabel: status,
+  };
 
   const Icon = cfg.icon;
   const displayLabel = patientFacing ? cfg.patientLabel : cfg.label;
