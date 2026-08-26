@@ -1,26 +1,140 @@
+@import url('https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;0,9..144,600;1,9..144,500&family=Manrope:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
 @import "tailwindcss";
 
+/* ---------------------------------------------------------------
+   MedTrace — Global Design System
+   All design tokens, utility classes, and animations live here
+   so they're available to every page and component automatically.
+----------------------------------------------------------------*/
+
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --mt-indigo: #3E36B0;
+  --mt-sky: #A6DEF7;
+  --mt-white: #FFFFFF;
+  --mt-ink: #111111;
+  --mt-magenta: #F62088;
+  --mt-teal: #B9DDDF;
+  --mt-lavender: #D9D9FF;
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --color-background: var(--mt-white);
+  --color-foreground: var(--mt-ink);
+  --font-sans: 'Manrope', system-ui, sans-serif;
+  --font-mono: 'IBM Plex Mono', monospace;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+html {
+  scroll-behavior: smooth;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: 'Manrope', system-ui, sans-serif;
+  color: var(--mt-ink);
+  background: var(--mt-white);
+}
+
+/* --- Typography utilities --- */
+.mt-display { font-family: 'Fraunces', serif; }
+.mt-mono { font-family: 'IBM Plex Mono', monospace; }
+
+/* --- Color utilities --- */
+.mt-bg-indigo { background-color: var(--mt-indigo); }
+.mt-bg-white { background-color: var(--mt-white); }
+.mt-bg-sky { background-color: var(--mt-sky); }
+.mt-bg-teal { background-color: var(--mt-teal); }
+.mt-bg-lavender { background-color: var(--mt-lavender); }
+.mt-bg-magenta { background-color: var(--mt-magenta); }
+.mt-text-indigo { color: var(--mt-indigo); }
+.mt-text-magenta { color: var(--mt-magenta); }
+.mt-text-ink { color: var(--mt-ink); }
+.mt-text-white { color: var(--mt-white); }
+.mt-text-muted { color: rgba(17,17,17,0.6); }
+.mt-border-indigo { border-color: var(--mt-indigo); }
+.mt-border-dashed-indigo { border: 1.5px dashed rgba(62,54,176,0.4); }
+
+/* --- Button styles --- */
+.mt-btn-primary {
+  background-color: var(--mt-magenta);
+  color: var(--mt-white);
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+.mt-btn-primary:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 24px rgba(246,32,136,0.35);
+}
+
+.mt-btn-secondary {
+  background: transparent;
+  color: var(--mt-indigo);
+  border: 1.5px solid var(--mt-indigo);
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.mt-btn-secondary:hover {
+  background: var(--mt-indigo);
+  color: var(--mt-white);
+}
+
+/* --- Decorative elements --- */
+.mt-perforation {
+  height: 1px;
+  background-image: radial-gradient(circle, rgba(62,54,176,0.35) 1.5px, transparent 1.5px);
+  background-size: 10px 1px;
+  background-repeat: repeat-x;
+}
+
+.mt-seal-card {
+  border: 1.5px dashed rgba(62,54,176,0.45);
+  border-radius: 20px;
+  background: linear-gradient(180deg, #FFFFFF 0%, rgba(217,217,255,0.33) 100%);
+  position: relative;
+  overflow: hidden;
+}
+
+.mt-chain-line {
+  background: repeating-linear-gradient(90deg, var(--mt-indigo) 0 8px, transparent 8px 14px);
+  height: 2px;
+}
+.mt-chain-line-v {
+  background: repeating-linear-gradient(180deg, var(--mt-indigo) 0 8px, transparent 8px 14px);
+  width: 2px;
+}
+
+.mt-node {
+  width: 56px; height: 56px; border-radius: 9999px;
+  background: var(--mt-white);
+  border: 2px solid var(--mt-indigo);
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+}
+
+.mt-stat-chip {
+  border: 1.5px dashed rgba(255,255,255,0.4);
+  border-radius: 14px;
+}
+
+/* --- Animations --- */
+.mt-scanline {
+  position: absolute;
+  left: 0; right: 0;
+  height: 40%;
+  background: linear-gradient(180deg, transparent 0%, rgba(246,32,136,0.14) 45%, rgba(246,32,136,0.28) 50%, rgba(246,32,136,0.14) 55%, transparent 100%);
+  animation: mt-scan 3.2s ease-in-out infinite;
+}
+@keyframes mt-scan {
+  0% { top: -45%; }
+  55% { top: 105%; }
+  100% { top: 105%; }
+}
+
+.mt-stamp-pop {
+  animation: mt-pop 0.6s cubic-bezier(.34,1.56,.64,1) 1.6s both;
+}
+@keyframes mt-pop {
+  0% { transform: scale(0.4) rotate(-14deg); opacity: 0; }
+  100% { transform: scale(1) rotate(-8deg); opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mt-scanline, .mt-stamp-pop { animation: none; }
 }
