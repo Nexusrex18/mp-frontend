@@ -2,139 +2,100 @@ import React from "react";
 import {
   CheckCircle2,
   Clock,
-  Truck,
+  Truck,  
   AlertTriangle,
   XCircle,
   ShieldAlert,
   PackageCheck,
 } from "lucide-react";
 import { BatchStatus } from "@/lib/types";
+import { COLORS } from "@/lib/constants";
+
+/* ---------------------------------------------------------------
+   StatusBadge — colored pill showing batch verification status.
+   Used on /verify (patient) and internal batch detail pages.
+   Patient-facing copy: "Authentic" not "Valid", "Suspicious" not "Counterfeit".
+----------------------------------------------------------------*/
+
+export type BatchStatus =
+  | "Valid"
+  | "Expired"
+  | "Recalled"
+  | "Pending"
+  | "Counterfeit";
 
 interface StatusBadgeProps {
-  status: BatchStatus | "Pending" | "Fulfilled" | "Confirmed" | string;
-  size?: "sm" | "md" | "lg";
-  showIcon?: boolean;
+  status: BatchStatus;
+  /** Use patient-friendly labels (default: true) */
+  patientFacing?: boolean;
 }
+
+const CONFIG: Record<
+  BatchStatus,
+  { icon: typeof ShieldCheck; bg: string; color: string; label: string; patientLabel: string }
+> = {
+  Valid: {
+    icon: ShieldCheck,
+    bg: "rgba(185, 221, 223, 0.35)",
+    color: "#0a5c5f",
+    label: "Valid",
+    patientLabel: "Authentic",
+  },
+  Counterfeit: {
+    icon: AlertOctagon,
+    bg: "rgba(246, 32, 136, 0.15)",
+    color: COLORS.magenta,
+    label: "Counterfeit",
+    patientLabel: "Suspicious",
+  },
+  Recalled: {
+    icon: AlertOctagon,
+    bg: "rgba(246, 32, 136, 0.15)",
+    color: COLORS.magenta,
+    label: "Recalled",
+    patientLabel: "Recalled",
+  },
+  Expired: {
+    icon: XCircle,
+    bg: "rgba(17, 17, 17, 0.08)",
+    color: "rgba(17, 17, 17, 0.7)",
+    label: "Expired",
+    patientLabel: "Expired",
+  },
+  Pending: {
+    icon: Clock,
+    bg: "rgba(62, 54, 176, 0.1)",
+    color: COLORS.indigo,
+    label: "Pending",
+    patientLabel: "Pending Registration",
+  },
+};
 
 export default function StatusBadge({
   status,
-  size = "md",
-  showIcon = true,
+  patientFacing = true,
 }: StatusBadgeProps) {
-  const getStatusConfig = () => {
-    switch (status) {
-      case "Valid":
-      case "Fulfilled":
-      case "Confirmed":
-        return {
-          bg: "rgba(16, 185, 129, 0.12)",
-          text: "#065F46",
-          border: "rgba(16, 185, 129, 0.35)",
-          icon: CheckCircle2,
-          label: status === "Valid" ? "Valid & Verified" : status,
-          dotColor: "#10B981",
-        };
-      case "InTransit":
-      case "Transferred":
-        return {
-          bg: "rgba(14, 165, 233, 0.12)",
-          text: "#0369A1",
-          border: "rgba(14, 165, 233, 0.35)",
-          icon: Truck,
-          label: "In Transit",
-          dotColor: "#0EA5E9",
-        };
-      case "Pending":
-      case "PendingAcceptance":
-        return {
-          bg: "rgba(245, 158, 11, 0.12)",
-          text: "#92400E",
-          border: "rgba(245, 158, 11, 0.35)",
-          icon: Clock,
-          label: status === "PendingAcceptance" ? "Awaiting Acceptance" : "Pending",
-          dotColor: "#F59E0B",
-        };
-      case "Dispensed":
-        return {
-          bg: "rgba(99, 102, 241, 0.12)",
-          text: "#4338CA",
-          border: "rgba(99, 102, 241, 0.35)",
-          icon: PackageCheck,
-          label: "Dispensed to Patient",
-          dotColor: "#6366F1",
-        };
-      case "Expired":
-        return {
-          bg: "rgba(239, 68, 68, 0.12)",
-          text: "#991B1B",
-          border: "rgba(239, 68, 68, 0.35)",
-          icon: AlertTriangle,
-          label: "Expired Batch",
-          dotColor: "#EF4444",
-        };
-      case "Recalled":
-        return {
-          bg: "rgba(220, 38, 38, 0.15)",
-          text: "#7F1D1D",
-          border: "rgba(220, 38, 38, 0.45)",
-          icon: XCircle,
-          label: "Regulatory Recall",
-          dotColor: "#DC2626",
-        };
-      case "Counterfeit":
-        return {
-          bg: "rgba(246, 32, 136, 0.15)",
-          text: "#831843",
-          border: "rgba(246, 32, 136, 0.4)",
-          icon: ShieldAlert,
-          label: "Counterfeit Detected",
-          dotColor: "#F62088",
-        };
-      default:
-        return {
-          bg: "rgba(107, 114, 128, 0.12)",
-          text: "#374151",
-          border: "rgba(107, 114, 128, 0.3)",
-          icon: Clock,
-          label: status,
-          dotColor: "#6B7280",
-        };
-    }
-  };
+  const cfg = CONFIG[status];
+  if (!cfg) return null;
 
-  const config = getStatusConfig();
-  const Icon = config.icon;
-
-  const sizeStyles = {
-    sm: { padding: "3px 8px", fontSize: 11, iconSize: 12, gap: 5 },
-    md: { padding: "5px 12px", fontSize: 12, iconSize: 14, gap: 6 },
-    lg: { padding: "7px 16px", fontSize: 14, iconSize: 16, gap: 8 },
-  }[size];
+  const Icon = cfg.icon;
+  const displayLabel = patientFacing ? cfg.patientLabel : cfg.label;
 
   return (
-    <span
-      className="inline-flex items-center font-medium rounded-full"
+    <div
+      className="inline-flex items-center"
       style={{
-        backgroundColor: config.bg,
-        color: config.text,
-        border: `1px solid ${config.border}`,
-        padding: sizeStyles.padding,
-        fontSize: sizeStyles.fontSize,
-        gap: sizeStyles.gap,
-        letterSpacing: "0.01em",
+        backgroundColor: cfg.bg,
+        color: cfg.color,
+        padding: "6px 14px",
+        borderRadius: 999,
+        fontWeight: 700,
+        fontSize: 14,
+        gap: 6,
       }}
     >
-      <span
-        style={{
-          width: 6,
-          height: 6,
-          borderRadius: "50%",
-          backgroundColor: config.dotColor,
-          display: "inline-block",
-        }}
-      />
-      {showIcon && <Icon size={sizeStyles.iconSize} />}
-      <span className="font-semibold">{config.label}</span>
-    </span>
+      <Icon size={16} />
+      {displayLabel}
+    </div>
   );
 }
