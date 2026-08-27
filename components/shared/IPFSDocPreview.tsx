@@ -54,7 +54,7 @@ export default function IPFSDocPreview({
         </div>
       )}
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 gap-3">
         {documents.map((doc) => (
           <div
             key={doc.id || doc.cid}
@@ -62,7 +62,7 @@ export default function IPFSDocPreview({
           >
             <div>
               <div className="flex items-start justify-between gap-2">
-                <div className="flex items-center gap-2.5">
+                <div className="flex items-center gap-2.5 flex-1 min-w-0">
                   <div
                     className="w-9 h-9 rounded-xl flex items-center justify-center text-indigo-700 shrink-0"
                     style={{ backgroundColor: "rgba(62, 54, 176, 0.08)" }}
@@ -93,11 +93,11 @@ export default function IPFSDocPreview({
               </div>
 
               {/* IPFS CID */}
-              <div className="mt-3 bg-gray-50 p-2 rounded-xl border border-gray-100 flex items-center justify-between text-[11px] font-mono text-gray-600">
-                <span className="truncate max-w-[200px]">ipfs://{doc.cid}</span>
+              <div className="mt-3 bg-gray-50 p-2 rounded-xl border border-gray-100 flex items-center justify-between gap-2 text-[11px] font-mono text-gray-600 overflow-hidden">
+                <span className="truncate flex-1 min-w-0">ipfs://{doc.cid}</span>
                 <button
                   onClick={() => handleCopy(doc.cid)}
-                  className="text-gray-400 hover:text-gray-700 p-1 transition-colors"
+                  className="text-gray-400 hover:text-gray-700 p-1 transition-colors shrink-0"
                   title="Copy IPFS CID"
                 >
                   {copiedCid === doc.cid ? (

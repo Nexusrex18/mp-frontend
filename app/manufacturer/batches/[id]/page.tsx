@@ -123,7 +123,7 @@ export default function ManufacturerBatchDetailPage({
                 >
                   {batch.dispensingType} Classification
                 </span>
-                <StatusBadge status={batch.status} size="sm" />
+                <StatusBadge status={batch.status} />
               </div>
               <div className="text-xs text-gray-500 font-mono flex flex-wrap items-center gap-3 mt-1.5">
                 <span>Batch ID: <strong>{batch.id}</strong></span>

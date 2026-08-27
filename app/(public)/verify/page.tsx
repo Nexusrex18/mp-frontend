@@ -1,12 +1,17 @@
 "use client";
 
 import { useState } from "react";
-import { Search, QrCode, ShieldCheck, AlertTriangle, XCircle } from "lucide-react";
+import {
+  Search,
+  QrCode,
+  ShieldCheck,
+  AlertTriangle,
+  XCircle,
+} from "lucide-react";
 import { COLORS } from "@/lib/constants";
-import StatusBadge, { type BatchStatus } from "@/components/shared/StatusBadge";
-import CustodyTimeline, {
-  type TimelineEvent,
-} from "@/components/shared/CustodyTimeline";
+import StatusBadge from "@/components/shared/StatusBadge";
+import { type BatchStatus, type CustodyEvent } from "@/lib/types";
+import CustodyTimeline from "@/components/shared/CustodyTimeline";
 
 /* ---------------------------------------------------------------
    Patient Verification Page — /verify
@@ -27,7 +32,7 @@ interface MockBatch {
   mfgDate: string;
   expDate: string;
   status: BatchStatus;
-  timeline: TimelineEvent[];
+  timeline: CustodyEvent[];
 }
 
 const MOCK_BATCHES: Record<string, MockBatch> = {
@@ -41,25 +46,37 @@ const MOCK_BATCHES: Record<string, MockBatch> = {
     status: "Valid",
     timeline: [
       {
-        role: "Manufacturer",
-        name: "PharmaCorp India Pvt. Ltd.",
+        id: "ev1",
+        stage: "Manufactured",
+        actorRole: "Manufacturer",
+        actorName: "PharmaCorp India Pvt. Ltd.",
+        actorAddress: "0x...",
+        txHash: "0x...",
+        blockNumber: 100,
         location: "Mumbai, India",
-        date: "04 Feb 2026",
-        status: "Completed",
+        timestamp: "2026-02-04T10:00:00Z",
       },
       {
-        role: "Distributor",
-        name: "MedLogistics Global",
+        id: "ev2",
+        stage: "ReceivedByDistributor",
+        actorRole: "Distributor",
+        actorName: "MedLogistics Global",
+        actorAddress: "0x...",
+        txHash: "0x...",
+        blockNumber: 101,
         location: "Delhi, India",
-        date: "12 Feb 2026",
-        status: "Completed",
+        timestamp: "2026-02-12T14:30:00Z",
       },
       {
-        role: "Pharmacy",
-        name: "HealthFirst Pharmacy",
+        id: "ev3",
+        stage: "ReceivedByPharmacy",
+        actorRole: "Pharmacy",
+        actorName: "HealthFirst Pharmacy",
+        actorAddress: "0x...",
+        txHash: "0x...",
+        blockNumber: 102,
         location: "Bangalore, India",
-        date: "18 Feb 2026",
-        status: "Completed",
+        timestamp: "2026-02-18T09:15:00Z",
       },
     ],
   },
@@ -73,25 +90,37 @@ const MOCK_BATCHES: Record<string, MockBatch> = {
     status: "Expired",
     timeline: [
       {
-        role: "Manufacturer",
-        name: "GenMed Labs",
+        id: "ev4",
+        stage: "Manufactured",
+        actorRole: "Manufacturer",
+        actorName: "GenMed Labs",
+        actorAddress: "0x...",
+        txHash: "0x...",
+        blockNumber: 200,
         location: "Hyderabad, India",
-        date: "15 Jan 2024",
-        status: "Completed",
+        timestamp: "2024-01-15T08:00:00Z",
       },
       {
-        role: "Distributor",
-        name: "FastPharma Distributors",
+        id: "ev5",
+        stage: "ReceivedByDistributor",
+        actorRole: "Distributor",
+        actorName: "FastPharma Distributors",
+        actorAddress: "0x...",
+        txHash: "0x...",
+        blockNumber: 201,
         location: "Chennai, India",
-        date: "22 Jan 2024",
-        status: "Completed",
+        timestamp: "2024-01-22T11:20:00Z",
       },
       {
-        role: "Pharmacy",
-        name: "CityMed Pharmacy",
+        id: "ev6",
+        stage: "ReceivedByPharmacy",
+        actorRole: "Pharmacy",
+        actorName: "CityMed Pharmacy",
+        actorAddress: "0x...",
+        txHash: "0x...",
+        blockNumber: 202,
         location: "Pune, India",
-        date: "01 Feb 2024",
-        status: "Completed",
+        timestamp: "2024-02-01T16:45:00Z",
       },
     ],
   },
