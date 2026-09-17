@@ -68,19 +68,19 @@ Stage 10 HARDENING & FULL INTEGRATION PASS
 ## 3. Stage 0 — Local Environment
 
 **Backend (`mp-backend`)**
-- [ ] `docker-compose.yml` brings up Postgres + Redis; confirm `prisma migrate dev` applies `20260916174942_init` cleanly.
-- [ ] `.env`: `DATABASE_URL`, `REDIS_URL`, `JWT_SECRET`, `FRONTEND_ORIGIN=http://localhost:3000`, `RPC_URL`, `CHAIN_ID`, IPFS pinning key, deployed contract addresses.
-- [ ] `scripts/deploy-local.ts` deploys all six contracts to a local Hardhat node; record addresses into env/config.
-- [ ] Confirm API boots on a fixed port (assume `3001` throughout this doc).
+- [x] `docker-compose.yml` brings up Postgres + Redis; confirm `prisma migrate dev` applies `20260916174942_init` cleanly.
+- [x] `.env`: `DATABASE_URL`, `REDIS_URL`, `JWT_SECRET`, `FRONTEND_ORIGIN=http://localhost:3000`, `RPC_URL`, `CHAIN_ID`, IPFS pinning key, deployed contract addresses.
+- [x] `scripts/deploy-local.ts` deploys all six contracts to a local Hardhat node; record addresses into env/config.
+- [x] Confirm API boots on a fixed port (assume `3001` throughout this doc).
 
 **Frontend (`mp-frontend`)**
-- [ ] `.env.local`: `NEXT_PUBLIC_API_BASE_URL=http://localhost:3001`, `NEXT_PUBLIC_CHAIN_ID`, `NEXT_PUBLIC_RPC_URL`, `NEXT_PUBLIC_EXPLORER_BASE_URL`.
-- [ ] Dev server on `:3000`, both repos running simultaneously.
+- [x] `.env.local`: `NEXT_PUBLIC_API_BASE_URL=http://localhost:3001`, `NEXT_PUBLIC_CHAIN_ID`, `NEXT_PUBLIC_RPC_URL`, `NEXT_PUBLIC_EXPLORER_BASE_URL`.
+- [x] Dev server on `:3000`, both repos running simultaneously.
 
 **Decisions to lock here (from `plan.md` §8):**
-- [ ] L2 testnet: Arbitrum Sepolia vs Base Sepolia — **needed before Stage 2.**
-- [ ] IPFS provider: Pinata vs web3.storage — **needed before Stage 4.**
-- [ ] Session transport: httpOnly cookie (recommended) vs bearer token — **needed before Stage 1.**
+- [x] L2 testnet: Base Sepolia (Chain ID 84532, contracts deployed) — **locked for Stage 2.**
+- [x] IPFS provider: Pinata (configured in .env) — **locked for Stage 4.**
+- [x] Session transport: httpOnly cookie (recommended) — **locked for Stage 1.**
 
 **Verify:** both servers run; a `curl` to a backend health route succeeds from the frontend origin without CORS error.
 
