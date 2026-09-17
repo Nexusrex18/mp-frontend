@@ -122,22 +122,22 @@ Stage 10 HARDENING & FULL INTEGRATION PASS
 *The machinery every write flow reuses. Build it once, correctly, before any write page.*
 
 **Backend first**
-- [ ] `src/common/dto/prepared-transaction.dto.ts` — the canonical shape (`backend-integration.md` §3)
-- [ ] `src/common/web3/` — `GET /web3/config` returning chainId, RPC, explorer, and per-contract `{ address, abi }` sourced from Hardhat artifacts
-- [ ] `src/indexer/indexer.controller.ts` — `GET /indexer/status?txHash=` → `{ indexed, blockNumber?, entity? }`
-- [ ] `GET /indexer/health` → `{ lastProcessedBlock, chainHead, lagBlocks, healthy }`
-- [ ] Ensure every indexed read response includes `txHash`
-- [ ] `src/common/` — global exception filter emitting `{ statusCode, error, message, details? }`
+- [x] `src/common/dto/prepared-transaction.dto.ts` — the canonical shape (`backend-integration.md` §3)
+- [x] `src/common/web3/` — `GET /web3/config` returning chainId, RPC, explorer, and per-contract `{ address, abi }` sourced from Hardhat artifacts
+- [x] `src/indexer/indexer.controller.ts` — `GET /indexer/status?txHash=` → `{ indexed, blockNumber?, entity? }`
+- [x] `GET /indexer/health` → `{ lastProcessedBlock, chainHead, lagBlocks, healthy }`
+- [x] Ensure every indexed read response includes `txHash`
+- [x] `src/common/` — global exception filter emitting `{ statusCode, error, message, details? }`
 
 **Frontend next**
-- [ ] `scripts/sync-abis.ts` — fetch `/web3/config`, write `lib/web3/abis/*.json` + `lib/web3/addresses.json`; wire as `prebuild`; **fail the build loudly if it can't run**
-- [ ] `lib/web3/config.ts`, `lib/web3/provider.ts`, `lib/web3/explorer.ts`
-- [ ] `lib/web3/submitTx.ts` — the *only* place `signer.sendTransaction` is called
-- [ ] `components/shared/NetworkGuard.tsx` — wrong-chain detection **before** the wallet popup opens
-- [ ] `context/TxContext.tsx`
-- [ ] `components/shared/TxStateBanner.tsx` — all five states: `awaiting_signature`, `pending_onchain`, `confirming_index`, `confirmed`, plus error paths (`rejected_by_user`, `reverted`, `index_timeout`)
-- [ ] `lib/hooks/useTxFlow.ts` — prepare → sign → receipt → poll `/indexer/status` → confirmed, with backoff + timeout
-- [ ] `lib/api/client.ts` — finish error normalization per `frontend-integration.md` §12
+- [x] `scripts/sync-abis.ts` — fetch `/web3/config`, write `lib/web3/abis/*.json` + `lib/web3/addresses.json`; wire as `prebuild`; **fail the build loudly if it can't run**
+- [x] `lib/web3/config.ts`, `lib/web3/provider.ts`, `lib/web3/explorer.ts`
+- [x] `lib/web3/submitTx.ts` — the *only* place `signer.sendTransaction` is called
+- [x] `components/shared/NetworkGuard.tsx` — wrong-chain detection **before** the wallet popup opens
+- [x] `context/TxContext.tsx`
+- [x] `components/shared/TxStateBanner.tsx` — all five states: `awaiting_signature`, `pending_onchain`, `confirming_index`, `confirmed`, plus error paths (`rejected_by_user`, `reverted`, `index_timeout`)
+- [x] `lib/hooks/useTxFlow.ts` — prepare → sign → receipt → poll `/indexer/status` → confirmed, with backoff + timeout
+- [x] `lib/api/client.ts` — finish error normalization per `frontend-integration.md` §12
 
 **Verify:** using any throwaway contract call, drive `useTxFlow` through all five states in the UI. Deliberately reject the signature in MetaMask → `rejected_by_user`, not a crash. Deliberately stop the indexer → `index_timeout` with a reassuring message and explorer link, **not** a failure message.
 

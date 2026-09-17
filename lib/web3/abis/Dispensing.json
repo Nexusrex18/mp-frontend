@@ -1,0 +1,197 @@
+[
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "accessControlAddress",
+        "type": "address"
+      },
+      {
+        "internalType": "address",
+        "name": "batchContractAddress",
+        "type": "address"
+      },
+      {
+        "internalType": "address",
+        "name": "prescriptionContractAddress",
+        "type": "address"
+      }
+    ],
+    "stateMutability": "nonpayable",
+    "type": "constructor"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "uint256",
+        "name": "batchId",
+        "type": "uint256"
+      },
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "pharmacy",
+        "type": "address"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "quantity",
+        "type": "uint256"
+      },
+      {
+        "indexed": true,
+        "internalType": "uint256",
+        "name": "prescriptionId",
+        "type": "uint256"
+      },
+      {
+        "indexed": false,
+        "internalType": "enum Dispensing.DispensingType",
+        "name": "dispensingType",
+        "type": "uint8"
+      }
+    ],
+    "name": "Dispensed",
+    "type": "event"
+  },
+  {
+    "inputs": [],
+    "name": "accessControl",
+    "outputs": [
+      {
+        "internalType": "contract PharmaAccessControl",
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "batchContract",
+    "outputs": [
+      {
+        "internalType": "contract Batch",
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "dispensingId",
+        "type": "uint256"
+      }
+    ],
+    "name": "getDispensingRecord",
+    "outputs": [
+      {
+        "components": [
+          {
+            "internalType": "uint256",
+            "name": "batchId",
+            "type": "uint256"
+          },
+          {
+            "internalType": "address",
+            "name": "pharmacy",
+            "type": "address"
+          },
+          {
+            "internalType": "uint256",
+            "name": "quantity",
+            "type": "uint256"
+          },
+          {
+            "internalType": "uint256",
+            "name": "prescriptionId",
+            "type": "uint256"
+          },
+          {
+            "internalType": "enum Dispensing.DispensingType",
+            "name": "dispensingType",
+            "type": "uint8"
+          },
+          {
+            "internalType": "uint256",
+            "name": "timestamp",
+            "type": "uint256"
+          }
+        ],
+        "internalType": "struct Dispensing.DispensingEvent",
+        "name": "",
+        "type": "tuple"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "getTotalDispensingRecords",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "prescriptionContract",
+    "outputs": [
+      {
+        "internalType": "contract Prescription",
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "batchId",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "quantity",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "prescriptionId",
+        "type": "uint256"
+      },
+      {
+        "internalType": "enum Dispensing.DispensingType",
+        "name": "dispensingType",
+        "type": "uint8"
+      }
+    ],
+    "name": "recordDispensing",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  }
+]
