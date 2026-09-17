@@ -1,18 +1,22 @@
-// Public layout shell — no wallet UI, no sidebar, no blockchain terminology
+import PublicNavbar from "@/components/shared/PublicNavbar";
+import Footer from "@/components/shared/Footer";
+
+/* ---------------------------------------------------------------
+   Public Layout — wraps /, /verify, /verify/report
+   ❌ No wallet UI anywhere in this layout (hard rule #2)
+   ❌ No blockchain jargon (hard rule #3)
+----------------------------------------------------------------*/
+
 export default function PublicLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
   return (
-    <div>
-      {/* Public navigation — no WalletConnectButton here, ever */}
-      <header>
-        <nav>
-          <span>MedTrace</span>
-        </nav>
-      </header>
+    <>
+      <PublicNavbar />
       <main>{children}</main>
-    </div>
+      <Footer />
+    </>
   );
 }
