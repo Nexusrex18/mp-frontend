@@ -148,18 +148,18 @@ Stage 10 HARDENING & FULL INTEGRATION PASS
 *Deliberately early: it's the highest-trust surface and has zero dependencies on auth or tx machinery.*
 
 **Backend first**
-- [ ] `src/verification/` — `GET /verify/:batchId` (public, cached, rate-limited)
-- [ ] `src/verification/guards/verify-rate-limit.guard.ts` — emit `Retry-After`, `X-RateLimit-*`
-- [ ] `POST /verify/report` (public, rate-limited) + `GET /verify/reports` (admin-only) — **new, currently missing**
-- [ ] `src/qr/` — `POST /qr/decode`
-- [ ] Redis caching on the verify read path
+- [x] `src/verification/` — `GET /verify/:batchId` (public, cached, rate-limited)
+- [x] `src/verification/guards/verify-rate-limit.guard.ts` — emit `Retry-After`, `X-RateLimit-*`
+- [x] `POST /verify/report` (public, rate-limited) + `GET /verify/reports` (admin-only) — **new, currently missing**
+- [x] `src/qr/` — `POST /qr/decode`
+- [x] Redis caching on the verify read path
 
 **Frontend next**
-- [ ] `components/shared/QRScannerModal.tsx` + `lib/hooks/useQRScanner.ts`
-- [ ] `lib/api/verification.ts`, `lib/api/qr.ts`, `lib/hooks/useVerify.ts`
-- [ ] `app/(public)/verify/page.tsx` — scan or manual entry → result card using existing `StatusBadge` + `CustodyTimeline` (mode=`simplified`)
-- [ ] `app/(public)/verify/report/page.tsx`
-- [ ] `app/(public)/layout.tsx` — confirm it imports **no** wallet/auth context
+- [x] `components/shared/QRScannerModal.tsx` + `lib/hooks/useQRScanner.ts`
+- [x] `lib/api/verification.ts`, `lib/api/qr.ts`, `lib/hooks/useVerify.ts`
+- [x] `app/(public)/verify/page.tsx` — scan or manual entry → result card using existing `StatusBadge` + `CustodyTimeline` (mode=`simplified`)
+- [x] `app/(public)/verify/report/page.tsx`
+- [x] `app/(public)/layout.tsx` — confirm it imports **no** wallet/auth context
 
 **Verify (this stage's checks matter more than most):**
 - Works in a browser profile with **MetaMask not installed at all.**

@@ -81,3 +81,76 @@ export interface ApiErrorResponse {
   message: string | string[];
   details?: unknown;
 }
+
+// mirrors backend: src/verification/verification.service.ts publicVerify response
+export interface PublicVerifyResponseDto {
+  identifier: string;
+  id?: string;
+  batchNumber?: string;
+  referenceNumber?: string | null;
+  status: string;
+  currentStatus: string;
+  isExpired: boolean;
+  product?: string;
+  dosage?: string;
+  medicine: {
+    name: string;
+    dosage: string;
+    classification?: string;
+    requiresPrescription?: boolean;
+  };
+  manufacturingDate: string;
+  expiryDate: string;
+  mfgDate?: string;
+  expDate?: string;
+  manufacturer: string;
+  currentHolder: string;
+  supplyChain: Array<{
+    from: string;
+    to: string;
+    accepted: boolean;
+    date: string;
+  }>;
+  timeline?: Array<{
+    id: string;
+    stage: any;
+    actorRole: string;
+    actorName: string;
+    timestamp: string;
+    location?: string;
+  }>;
+  qualityDocuments?: string | null;
+  _source?: 'cache' | 'database';
+}
+
+// mirrors backend: src/verification/dto/create-verification-report.dto.ts
+export interface CreateVerificationReportDto {
+  batchId?: string;
+  description: string;
+  location?: string;
+  photo?: string;
+  contactInfo?: string;
+}
+
+export interface CreateVerificationReportResponseDto {
+  reportId: string;
+  message: string;
+}
+
+// mirrors backend: src/qr/dto/decode-qr.dto.ts
+export interface DecodeQrDto {
+  payload: string;
+}
+
+export interface QrDecodeResponseDto {
+  type: 'BATCH' | 'PRESCRIPTION';
+  targetId: string;
+  batchId?: string;
+  prescriptionId?: string;
+  productName?: string;
+  dosage?: string;
+  currentCustodian?: string;
+  status?: string;
+  [key: string]: any;
+}
+
