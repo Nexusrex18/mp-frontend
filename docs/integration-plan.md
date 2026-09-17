@@ -91,22 +91,22 @@ Stage 10 HARDENING & FULL INTEGRATION PASS
 *Blocks every role-protected page. Nothing else proceeds until this works.*
 
 **Backend first**
-- [ ] `src/main.ts` — `enableCors({ origin: FRONTEND_ORIGIN, credentials: true })`
-- [ ] `src/auth/auth.controller.ts` — `GET /auth/nonce?address=`, `POST /auth/verify` sets httpOnly cookie
-- [ ] JWT payload includes the wallet address; reject requests where a supplied address disagrees with the session
-- [ ] `src/users/users.controller.ts` — `GET /users/me` resolves role/org from cookie alone
-- [ ] `src/common/guards/roles.guard.ts` — verify it rejects role mismatch with **403**, missing session with **401**
-- [ ] `src/users/users.controller.ts` — `POST /users/register-request`
+- [x] `src/main.ts` — `enableCors({ origin: FRONTEND_ORIGIN, credentials: true })`
+- [x] `src/auth/auth.controller.ts` — `GET /auth/nonce?address=`, `POST /auth/verify` sets httpOnly cookie
+- [x] JWT payload includes the wallet address; reject requests where a supplied address disagrees with the session
+- [x] `src/users/users.controller.ts` — `GET /users/me` resolves role/org from cookie alone
+- [x] `src/common/guards/roles.guard.ts` — verify it rejects role mismatch with **403**, missing session with **401**
+- [x] `src/users/users.controller.ts` — `POST /users/register-request`
 
 **Frontend next**
-- [ ] `lib/api/client.ts` — base URL, `credentials: 'include'`, error normalization skeleton
-- [ ] `lib/api/auth.ts`, `lib/api/types.ts`
-- [ ] `context/WalletContext.tsx` — address, chainId, connect/disconnect, signer, **account-change listener**
-- [ ] `context/AuthContext.tsx` — session, role, hydrate via `/users/me` on mount
-- [ ] `components/shared/WalletConnectButton.tsx`
-- [ ] `app/auth/connect/page.tsx` — full SIWE flow + role-based redirect
-- [ ] `app/unauthorized/page.tsx` — wired to `POST /users/register-request`
-- [ ] `RoleGuard` wrapper applied in each role's `layout.tsx` (create the five layouts)
+- [x] `lib/api/client.ts` — base URL, `credentials: 'include'`, error normalization skeleton
+- [x] `lib/api/auth.ts`, `lib/api/types.ts`
+- [x] `context/WalletContext.tsx` — address, chainId, connect/disconnect, signer, **account-change listener**
+- [x] `context/AuthContext.tsx` — session, role, hydrate via `/users/me` on mount
+- [x] `components/shared/WalletConnectButton.tsx`
+- [x] `app/auth/connect/page.tsx` — full SIWE flow + role-based redirect
+- [x] `app/unauthorized/page.tsx` — wired to `POST /users/register-request`
+- [x] `RoleGuard` wrapper applied in each role's `layout.tsx` (create the five layouts)
 
 **Verify:**
 - Connect wallet → sign → land on the correct role dashboard (stub content is fine).

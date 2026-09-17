@@ -2,13 +2,13 @@ import React from "react";
 import InternalLayout from "@/components/shared/InternalLayout";
 import RoleGuard from "@/components/shared/RoleGuard";
 
-export default function DoctorLayout({
+export default function AdminLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
   return (
-    <RoleGuard role="DOCTOR_ROLE">
+    <RoleGuard role="ADMIN_ROLE">
       <InternalLayout>{children}</InternalLayout>
     </RoleGuard>
   );
