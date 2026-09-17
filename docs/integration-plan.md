@@ -175,19 +175,19 @@ Stage 10 HARDENING & FULL INTEGRATION PASS
 *The template every subsequent write flow copies. Get it right here and the rest is repetition.*
 
 **Backend first**
-- [ ] `src/ipfs/` — `POST /ipfs/upload` pins documents, returns CID
-- [ ] `src/products/` — `GET /products` (needed for the wizard's product + classification step)
-- [ ] `src/batches/` — `POST /batches/prepare` returning `PreparedTransactionDto` for `Batch.registerBatch`
-- [ ] `GET /batches/:id`, `GET /batches?owner=` with pagination envelope
-- [ ] `src/indexer/` — `Batch.sol` event handling writes the `batches` row on `BatchRegistered`
-- [ ] `src/qr/` — `POST /qr/generate`
+- [x] `src/ipfs/` — `POST /ipfs/upload` pins documents, returns CID
+- [x] `src/products/` — `GET /products` (needed for the wizard's product + classification step)
+- [x] `src/batches/` — `POST /batches/prepare` returning `PreparedTransactionDto` for `Batch.registerBatch`
+- [x] `GET /batches/:id`, `GET /batches?owner=` with pagination envelope
+- [x] `src/indexer/` — `Batch.sol` event handling writes the `batches` row on `BatchRegistered`
+- [x] `src/qr/` — `POST /qr/generate`
 
 **Frontend next**
-- [ ] `lib/api/ipfs.ts`, `lib/api/batches.ts`, `lib/api/products.ts`, `lib/hooks/useBatch.ts`
-- [ ] `components/shared/QRCodeDisplay.tsx`, `components/shared/IPFSDocPreview.tsx`
-- [ ] `components/manufacturer/CreateBatchWizard.tsx` — 4 steps (Product → **Dispensing Classification** → Dates/Qty/Docs → Review)
-- [ ] `app/manufacturer/batches/new/page.tsx` — wizard + `useTxFlow` + QR success step
-- [ ] `app/manufacturer/page.tsx`, `app/manufacturer/batches/page.tsx`, `app/manufacturer/batches/[id]/page.tsx`
+- [x] `lib/api/ipfs.ts`, `lib/api/batches.ts`, `lib/api/products.ts`, `lib/hooks/useBatch.ts`
+- [x] `components/shared/QRCodeDisplay.tsx`, `components/shared/IPFSDocPreview.tsx`
+- [x] `components/manufacturer/CreateBatchWizard.tsx` — 4 steps (Product → **Dispensing Classification** → Dates/Qty/Docs → Review)
+- [x] `app/manufacturer/batches/new/page.tsx` — wizard + `useTxFlow` + QR success step
+- [x] `app/manufacturer/page.tsx`, `app/manufacturer/batches/page.tsx`, `app/manufacturer/batches/[id]/page.tsx`
 
 **Verify:** create a batch end-to-end on testnet → document lands on IPFS → transaction signed by the *manufacturer's own wallet* → `confirming_index` state visible → batch appears in `GET /batches/:id` → QR renders and is printable. Then confirm the new batch appears in My Batches **without a manual refresh hack**.
 

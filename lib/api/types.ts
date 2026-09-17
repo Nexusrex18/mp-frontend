@@ -154,3 +154,85 @@ export interface QrDecodeResponseDto {
   [key: string]: any;
 }
 
+export interface GenerateQrDto {
+  batchId?: string;
+  prescriptionId?: string;
+}
+
+export interface GenerateQrResponseDto {
+  qrId: string;
+  type: 'BATCH' | 'PRESCRIPTION';
+  targetId: string;
+  batchId?: string;
+  prescriptionId?: string;
+  payload: string;
+  createdAt: string;
+}
+
+// Product catalog DTO
+export interface ProductDto {
+  id: string;
+  name: string;
+  dosage: string;
+  dispensingType: 'OTC' | 'PRESCRIPTION';
+  regulatoryClassification: string;
+  createdAt?: string;
+}
+
+// Batch prepare DTO
+export interface PrepareBatchDto {
+  productId: string;
+  quantity: number;
+  manufacturingDate: string;
+  expiryDate: string;
+  ipfsCid?: string;
+}
+
+// Batch detail & list DTOs
+export interface BatchDetailDto {
+  id: string;
+  batchChainId?: string | null;
+  productId: string;
+  product: ProductDto;
+  manufacturerId: string;
+  manufacturer: OrganizationDto;
+  quantity: number;
+  manufacturingDate: string;
+  expiryDate: string;
+  ipfsCid?: string | null;
+  currentCustodianId: string;
+  currentCustodian: OrganizationDto;
+  status: string;
+  createdAt: string;
+  updatedAt: string;
+  ipfsDocuments?: Array<{
+    id: string;
+    cid: string;
+    docType: string;
+    uploadedAt: string;
+  }>;
+  custodyTransfers?: Array<any>;
+  verificationRecords?: Array<any>;
+  dispensingRecords?: Array<any>;
+}
+
+export interface BatchListResponseDto {
+  data: BatchDetailDto[];
+  total: number;
+  page: number;
+  limit: number;
+  totalPages: number;
+}
+
+// IPFS upload response
+export interface IpfsUploadResponseDto {
+  cid: string;
+  ipfsUrl: string;
+  filename: string;
+  docType: string;
+  size: number;
+  mimeType: string;
+  documentRecord?: any;
+}
+
+

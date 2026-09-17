@@ -1,5 +1,10 @@
 import { apiClient } from './client';
-import { DecodeQrDto, QrDecodeResponseDto } from './types';
+import {
+  DecodeQrDto,
+  QrDecodeResponseDto,
+  GenerateQrDto,
+  GenerateQrResponseDto,
+} from './types';
 
 export const qrApi = {
   /**
@@ -15,8 +20,8 @@ export const qrApi = {
    * POST /qr/generate
    * Generates a QR code for a batch or prescription (authenticated).
    */
-  generateQr: async (data: { type: 'BATCH' | 'PRESCRIPTION'; targetId: string }) => {
-    return apiClient.post('/qr/generate', data);
+  generateQr: async (data: GenerateQrDto): Promise<GenerateQrResponseDto> => {
+    return apiClient.post<GenerateQrResponseDto>('/qr/generate', data);
   },
 
   /**

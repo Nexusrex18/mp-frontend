@@ -16,16 +16,33 @@ import {
 } from "lucide-react";
 import { getStoredBatches } from "@/lib/mockData";
 import { BatchRecord } from "@/lib/types";
+import { batchesApi, mapApiBatchToRecord } from "@/lib/api/batches";
 import DataTable, { Column } from "@/components/shared/DataTable";
 import StatusBadge from "@/components/shared/StatusBadge";
 import { COLORS } from "@/lib/constants";
 
 export default function ManufacturerBatchesPage() {
   const [batches, setBatches] = useState<BatchRecord[]>([]);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    setBatches(getStoredBatches());
-    const handleUpdate = () => setBatches(getStoredBatches());
+    const loadBatches = async () => {
+      try {
+        const res = await batchesApi.listBatches();
+        const apiBatches = (res.data || []).map(mapApiBatchToRecord);
+        const stored = getStoredBatches();
+        const ids = new Set(apiBatches.map((b) => b.id));
+        const merged = [...apiBatches, ...stored.filter((b) => !ids.has(b.id))];
+        setBatches(merged);
+      } catch {
+        setBatches(getStoredBatches());
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadBatches();
+    const handleUpdate = () => loadBatches();
     window.addEventListener("medtrace_data_updated", handleUpdate);
     return () => window.removeEventListener("medtrace_data_updated", handleUpdate);
   }, []);

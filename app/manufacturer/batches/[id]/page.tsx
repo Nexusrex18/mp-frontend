@@ -21,6 +21,7 @@ import {
 } from "lucide-react";
 import { getStoredBatches } from "@/lib/mockData";
 import { BatchRecord } from "@/lib/types";
+import { batchesApi, mapApiBatchToRecord } from "@/lib/api/batches";
 import StatusBadge from "@/components/shared/StatusBadge";
 import CustodyTimeline from "@/components/shared/CustodyTimeline";
 import IPFSDocPreview from "@/components/shared/IPFSDocPreview";
@@ -34,20 +35,56 @@ export default function ManufacturerBatchDetailPage({
 }) {
   const resolvedParams = use(params);
   const [batch, setBatch] = useState<BatchRecord | null>(null);
+  const [loading, setLoading] = useState(true);
   const [showQrModal, setShowQrModal] = useState(false);
 
   useEffect(() => {
-    const batches = getStoredBatches();
-    const found = batches.find((b) => b.id === resolvedParams.id);
-    if (found) {
-      setBatch(found);
-    }
+    let isMounted = true;
+    const loadBatch = async () => {
+      setLoading(true);
+      try {
+        const apiData = await batchesApi.getBatchById(resolvedParams.id);
+        if (apiData && isMounted) {
+          setBatch(mapApiBatchToRecord(apiData));
+          return;
+        }
+      } catch {
+        // Fallback to local / mock data
+      }
+
+      const batches = getStoredBatches();
+      const found = batches.find((b) => b.id === resolvedParams.id);
+      if (isMounted) {
+        setBatch(found || null);
+      }
+      setLoading(false);
+    };
+
+    loadBatch();
+    return () => {
+      isMounted = false;
+    };
   }, [resolvedParams.id]);
 
-  if (!batch) {
+  if (loading) {
     return (
       <div className="py-12 text-center text-xs text-gray-500">
         Loading batch records from on-chain state...
+      </div>
+    );
+  }
+
+  if (!batch) {
+    return (
+      <div className="py-12 text-center space-y-3">
+        <p className="text-sm font-semibold text-gray-700">Batch not found</p>
+        <p className="text-xs text-gray-500">No batch with ID {resolvedParams.id} was located.</p>
+        <Link
+          href="/manufacturer/batches"
+          className="inline-flex items-center gap-1.5 text-xs font-bold text-indigo-600 hover:text-indigo-800"
+        >
+          <ArrowLeft size={14} /> Back to All Batches
+        </Link>
       </div>
     );
   }
