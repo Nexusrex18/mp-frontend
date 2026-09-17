@@ -235,4 +235,88 @@ export interface IpfsUploadResponseDto {
   documentRecord?: any;
 }
 
+// Custody DTOs
+export interface PrepareTransferDto {
+  batchId: string;
+  toWalletAddress?: string;
+  toOrgId?: string;
+}
+
+export interface PrepareAcceptDto {
+  batchId: string;
+}
+
+export interface IncomingTransferItemDto {
+  transferId: string;
+  status: string;
+  txHash: string;
+  blockNumber: string | null;
+  initiatedAt: string;
+  fromOrg: {
+    id: string;
+    name: string;
+    type: string;
+  };
+  toOrg: {
+    id: string;
+    name: string;
+    type: string;
+  };
+  batch: {
+    id: string;
+    batchChainId: string | null;
+    quantity: number;
+    manufacturingDate: string;
+    expiryDate: string;
+    status: string;
+    ipfsCid: string | null;
+    product: ProductDto;
+    manufacturer: OrganizationDto;
+    currentCustodian: OrganizationDto;
+  };
+}
+
+export interface IncomingTransfersResponseDto {
+  data: IncomingTransferItemDto[];
+  incoming: IncomingTransferItemDto[];
+  total: number;
+  count: number;
+  page?: number;
+  limit?: number;
+  totalPages?: number;
+}
+
+export interface CustodyHistoryItemDto {
+  id: string;
+  status: string;
+  fromOrg: {
+    id: string;
+    name: string;
+    type: string;
+  };
+  toOrg: {
+    id: string;
+    name: string;
+    type: string;
+  };
+  txHash: string;
+  logIndex: number;
+  blockNumber: string | null;
+  timestamp: string;
+}
+
+export interface CustodyHistoryResponseDto {
+  batch: {
+    id: string;
+    batchChainId: string | null;
+    productId: string;
+    productName: string;
+    status: string;
+    manufacturer: OrganizationDto;
+    currentCustodian: OrganizationDto;
+  };
+  history: CustodyHistoryItemDto[];
+}
+
+
 

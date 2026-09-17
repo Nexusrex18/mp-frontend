@@ -17,69 +17,160 @@ import {
 import {
   getStoredBatches,
   saveStoredBatches,
-  generateTxHash,
 } from "@/lib/mockData";
 import { BatchRecord, CustodyEvent } from "@/lib/types";
-import { useTxState } from "@/context/TxStateContext";
 import { useWallet } from "@/context/WalletContext";
+import { useTx } from "@/context/TxContext";
+import { custodyApi } from "@/lib/api/custody";
+import { mapApiBatchToRecord } from "@/lib/api/batches";
+import { parseCustodyError } from "@/lib/hooks/useCustody";
+import { submitTx } from "@/lib/web3/submitTx";
+import { apiClient } from "@/lib/api/client";
 import StatusBadge from "@/components/shared/StatusBadge";
 import EmptyState from "@/components/shared/EmptyState";
 import { COLORS } from "@/lib/constants";
 
 export default function PharmacyIncomingPage() {
   const [batches, setBatches] = useState<BatchRecord[]>([]);
-  const { address, currentStakeholder } = useWallet();
-  const { executeTx } = useTxState();
+  const [loading, setLoading] = useState(true);
+  const [processingBatchId, setProcessingBatchId] = useState<string | null>(null);
+  const [inlineErrors, setInlineErrors] = useState<Record<string, string | null>>({});
+
+  const { address, currentStakeholder, getSigner } = useWallet();
+  const { setTxInfo } = useTx();
+
+  const loadData = async () => {
+    setLoading(true);
+    try {
+      const res = await custodyApi.getIncoming();
+      const items = res.data || res.incoming || [];
+      const apiIncoming = items.map((item) => ({
+        ...mapApiBatchToRecord(item.batch as any),
+        status: "PendingAcceptance" as const,
+        currentCustodianRole: "Pharmacy" as const,
+        currentCustodianName: item.toOrg?.name || "CityCare Central Pharmacy",
+      }));
+
+      const stored = getStoredBatches().filter(
+        (b) => b.currentCustodianRole === "Pharmacy" && b.status === "PendingAcceptance"
+      );
+      const ids = new Set(apiIncoming.map((b) => b.id));
+      setBatches([...apiIncoming, ...stored.filter((b) => !ids.has(b.id))]);
+    } catch {
+      const stored = getStoredBatches().filter(
+        (b) => b.currentCustodianRole === "Pharmacy" && b.status === "PendingAcceptance"
+      );
+      setBatches(stored);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
-    setBatches(getStoredBatches());
-    const handleUpdate = () => setBatches(getStoredBatches());
+    loadData();
+    const handleUpdate = () => loadData();
     window.addEventListener("medtrace_data_updated", handleUpdate);
     return () => window.removeEventListener("medtrace_data_updated", handleUpdate);
   }, []);
 
-  const incomingBatches = batches.filter(
-    (b) =>
-      b.currentCustodianRole === "Pharmacy" &&
-      b.status === "PendingAcceptance"
-  );
-
   const handleAcceptBatch = async (batch: BatchRecord) => {
-    const acceptTx = generateTxHash();
+    setInlineErrors((prev) => ({ ...prev, [batch.id]: null }));
+    setProcessingBatchId(batch.id);
 
-    const newCustodyEvent: CustodyEvent = {
-      id: `cust-${Date.now()}`,
-      timestamp: new Date().toISOString(),
-      stage: "ReceivedByPharmacy",
-      actorRole: "Pharmacy",
-      actorName: currentStakeholder?.name || "CityCare Central Pharmacy",
-      actorAddress: address || "0x89D...71c4",
-      txHash: acceptTx,
-      blockNumber: 1999100,
-      location: "Manhattan Pharmacy Dispensary Shelf",
-      notes: "Received and verified intact. Stocked into inventory.",
-      temperatureVerified: true,
-    };
+    try {
+      setTxInfo({
+        state: "awaiting_signature",
+        title: "Accept Delivery into Pharmacy Stock",
+        description: `Please sign acceptance of batch ${batch.id} in your wallet...`,
+      });
 
-    const updatedBatch: BatchRecord = {
-      ...batch,
-      status: "Valid",
-      currentCustodianRole: "Pharmacy",
-      currentCustodianName: currentStakeholder?.name || "CityCare Central Pharmacy",
-      currentCustodianAddress: address || "0x89D...71c4",
-      custodyTimeline: [...batch.custodyTimeline, newCustodyEvent],
-    };
+      const prepared = await custodyApi.prepareAccept({ batchId: batch.id });
 
-    await executeTx({
-      title: "Accept Delivery into Pharmacy Stock",
-      description: `Writing pharmacy receipt for batch ${batch.id} on Arbitrum Sepolia L2...`,
-      onCommit: () => {
-        const all = getStoredBatches();
-        const updated = all.map((b) => (b.id === batch.id ? updatedBatch : b));
-        saveStoredBatches(updated);
-      },
-    });
+      const signer = await getSigner();
+      if (!signer) {
+        throw new Error("Wallet not connected. Please connect your pharmacy wallet.");
+      }
+
+      const { txHash } = await submitTx(signer, prepared, {
+        onTxSubmitted: (hash) => {
+          setTxInfo({
+            state: "pending_onchain",
+            txHash: hash,
+            title: "Accepting Delivery",
+            description: "Custody acceptance submitted to Arbitrum Sepolia...",
+          });
+        },
+      });
+
+      setTxInfo({
+        state: "confirming_index",
+        txHash,
+        title: "Indexing Transfer",
+        description: "Waiting for pharmacy intake to be indexed...",
+      });
+
+      // Poll indexer
+      let attempts = 0;
+      while (attempts < 15) {
+        await new Promise((r) => setTimeout(r, 2000));
+        try {
+          const statusRes = await apiClient.get<any>(`/indexer/status?txHash=${txHash}`);
+          if (statusRes?.indexed) break;
+        } catch {}
+        attempts++;
+      }
+
+      setTxInfo({
+        state: "confirmed",
+        txHash,
+        title: "Intake Accepted",
+        description: `Batch ${batch.id} successfully stocked into active pharmacy inventory!`,
+      });
+
+      const newCustodyEvent: CustodyEvent = {
+        id: `cust-${Date.now()}`,
+        timestamp: new Date().toISOString(),
+        stage: "ReceivedByPharmacy",
+        actorRole: "Pharmacy",
+        actorName: currentStakeholder?.name || "CityCare Central Pharmacy",
+        actorAddress: address || "0x89D...71c4",
+        txHash,
+        blockNumber: 0,
+        location: "Manhattan Pharmacy Dispensary Shelf",
+        notes: "Received and verified intact. Stocked into inventory.",
+        temperatureVerified: true,
+      };
+
+      const updatedBatch: BatchRecord = {
+        ...batch,
+        status: "Valid",
+        currentCustodianRole: "Pharmacy",
+        currentCustodianName: currentStakeholder?.name || "CityCare Central Pharmacy",
+        currentCustodianAddress: address || "0x89D...71c4",
+        custodyTimeline: [...batch.custodyTimeline, newCustodyEvent],
+      };
+
+      const all = getStoredBatches();
+      const updated = all.map((b) => (b.id === batch.id ? updatedBatch : b));
+      saveStoredBatches(updated);
+      window.dispatchEvent(new Event("medtrace_data_updated"));
+
+      setBatches((prev) => prev.filter((b) => b.id !== batch.id));
+    } catch (err: any) {
+      const parsed = parseCustodyError(err);
+      setInlineErrors((prev) => ({ ...prev, [batch.id]: parsed.message }));
+      setTxInfo({
+        state: "error",
+        title: "Intake Acceptance Blocked",
+        description: parsed.message,
+        error: parsed.message,
+      });
+    } finally {
+      setProcessingBatchId(null);
+    }
   };
+
+  const incomingBatches = batches;
 
   return (
     <div className="space-y-6">
@@ -154,6 +245,13 @@ export default function PharmacyIncomingPage() {
                 </div>
               </div>
 
+              {inlineErrors[batch.id] && (
+                <div className="p-3 bg-rose-50 border border-rose-200 rounded-2xl text-[11px] text-rose-800">
+                  <span className="font-bold">Intake Blocked: </span>
+                  <span>{inlineErrors[batch.id]}</span>
+                </div>
+              )}
+
               <div className="pt-2 flex items-center justify-between gap-3">
                 <Link
                   href={`/pharmacy/batches/${batch.id}`}
@@ -164,11 +262,20 @@ export default function PharmacyIncomingPage() {
 
                 <button
                   onClick={() => handleAcceptBatch(batch)}
-                  className="px-5 py-2 rounded-xl text-xs font-bold text-white shadow-sm transition-all hover:scale-105 active:scale-95 flex items-center gap-1.5"
+                  disabled={processingBatchId === batch.id}
+                  className={`px-5 py-2 rounded-xl text-xs font-bold text-white shadow-sm transition-all flex items-center gap-1.5 ${
+                    processingBatchId === batch.id
+                      ? "opacity-70 cursor-not-allowed"
+                      : "hover:scale-105 active:scale-95"
+                  }`}
                   style={{ backgroundColor: "#059669" }}
                 >
                   <CheckCircle2 size={14} />
-                  <span>Accept into Stock</span>
+                  <span>
+                    {processingBatchId === batch.id
+                      ? "Accepting on L2..."
+                      : "Accept into Stock"}
+                  </span>
                 </button>
               </div>
             </div>

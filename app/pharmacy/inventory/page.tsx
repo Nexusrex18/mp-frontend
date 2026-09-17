@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import { getStoredBatches } from "@/lib/mockData";
 import { BatchRecord } from "@/lib/types";
+import { batchesApi, mapApiBatchToRecord } from "@/lib/api/batches";
 import DataTable, { Column } from "@/components/shared/DataTable";
 import StatusBadge from "@/components/shared/StatusBadge";
 import { COLORS } from "@/lib/constants";
@@ -23,15 +24,31 @@ export default function PharmacyInventoryPage() {
   const [batches, setBatches] = useState<BatchRecord[]>([]);
 
   useEffect(() => {
-    setBatches(getStoredBatches());
-    const handleUpdate = () => setBatches(getStoredBatches());
+    const loadBatches = async () => {
+      try {
+        const res = await batchesApi.listBatches();
+        const apiBatches = (res.data || [])
+          .map(mapApiBatchToRecord)
+          .filter((b) => b.currentCustodianRole === "Pharmacy");
+        const stored = getStoredBatches().filter(
+          (b) => b.currentCustodianRole === "Pharmacy"
+        );
+        const ids = new Set(apiBatches.map((b) => b.id));
+        setBatches([...apiBatches, ...stored.filter((b) => !ids.has(b.id))]);
+      } catch {
+        setBatches(
+          getStoredBatches().filter((b) => b.currentCustodianRole === "Pharmacy")
+        );
+      }
+    };
+
+    loadBatches();
+    const handleUpdate = () => loadBatches();
     window.addEventListener("medtrace_data_updated", handleUpdate);
     return () => window.removeEventListener("medtrace_data_updated", handleUpdate);
   }, []);
 
-  const pharmacyBatches = batches.filter(
-    (b) => b.currentCustodianRole === "Pharmacy"
-  );
+  const pharmacyBatches = batches;
 
   const columns: Column<BatchRecord>[] = [
     {

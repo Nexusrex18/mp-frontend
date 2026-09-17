@@ -17,69 +17,161 @@ import {
 import {
   getStoredBatches,
   saveStoredBatches,
-  generateTxHash,
 } from "@/lib/mockData";
 import { BatchRecord, CustodyEvent } from "@/lib/types";
-import { useTxState } from "@/context/TxStateContext";
 import { useWallet } from "@/context/WalletContext";
+import { useTx } from "@/context/TxContext";
+import { custodyApi } from "@/lib/api/custody";
+import { mapApiBatchToRecord } from "@/lib/api/batches";
+import { parseCustodyError } from "@/lib/hooks/useCustody";
+import { submitTx } from "@/lib/web3/submitTx";
+import { apiClient } from "@/lib/api/client";
 import StatusBadge from "@/components/shared/StatusBadge";
 import EmptyState from "@/components/shared/EmptyState";
 import { COLORS } from "@/lib/constants";
 
 export default function DistributorIncomingPage() {
   const [batches, setBatches] = useState<BatchRecord[]>([]);
-  const { address, currentStakeholder } = useWallet();
-  const { executeTx } = useTxState();
+  const [loading, setLoading] = useState(true);
+  const [processingBatchId, setProcessingBatchId] = useState<string | null>(null);
+  const [inlineErrors, setInlineErrors] = useState<Record<string, string | null>>({});
+
+  const { address, currentStakeholder, getSigner } = useWallet();
+  const { setTxInfo } = useTx();
+
+  const loadData = async () => {
+    setLoading(true);
+    try {
+      const res = await custodyApi.getIncoming();
+      const items = res.data || res.incoming || [];
+      const apiIncoming = items.map((item) => ({
+        ...mapApiBatchToRecord(item.batch as any),
+        status: "PendingAcceptance" as const,
+        currentCustodianRole: "Distributor" as const,
+        currentCustodianName: item.toOrg?.name || "Distributor Node",
+      }));
+
+      const stored = getStoredBatches().filter(
+        (b) => b.currentCustodianRole === "Distributor" && b.status === "PendingAcceptance"
+      );
+      const ids = new Set(apiIncoming.map((b) => b.id));
+      setBatches([...apiIncoming, ...stored.filter((b) => !ids.has(b.id))]);
+    } catch {
+      const stored = getStoredBatches().filter(
+        (b) => b.currentCustodianRole === "Distributor" && b.status === "PendingAcceptance"
+      );
+      setBatches(stored);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
-    setBatches(getStoredBatches());
-    const handleUpdate = () => setBatches(getStoredBatches());
+    loadData();
+    const handleUpdate = () => loadData();
     window.addEventListener("medtrace_data_updated", handleUpdate);
     return () => window.removeEventListener("medtrace_data_updated", handleUpdate);
   }, []);
 
-  const incomingBatches = batches.filter(
-    (b) =>
-      b.currentCustodianRole === "Distributor" &&
-      b.status === "PendingAcceptance"
-  );
-
   const handleAcceptCustody = async (batch: BatchRecord) => {
-    const acceptTx = generateTxHash();
+    setInlineErrors((prev) => ({ ...prev, [batch.id]: null }));
+    setProcessingBatchId(batch.id);
 
-    const newCustodyEvent: CustodyEvent = {
-      id: `cust-${Date.now()}`,
-      timestamp: new Date().toISOString(),
-      stage: "ReceivedByDistributor",
-      actorRole: "Distributor",
-      actorName: currentStakeholder?.name || "SwiftLogistics Health",
-      actorAddress: address || "0x3A2...98b1",
-      txHash: acceptTx,
-      blockNumber: 1997100,
-      location: "Newark Logistics Hub Intake Bay",
-      notes: "Physical seal verified intact. Cold chain temperature within compliant range.",
-      temperatureVerified: true,
-    };
+    try {
+      setTxInfo({
+        state: "awaiting_signature",
+        title: "Accept Custody of Shipment",
+        description: `Please sign acceptance of batch ${batch.id} in your wallet...`,
+      });
 
-    const updatedBatch: BatchRecord = {
-      ...batch,
-      status: "Valid",
-      currentCustodianRole: "Distributor",
-      currentCustodianName: currentStakeholder?.name || "SwiftLogistics Health",
-      currentCustodianAddress: address || "0x3A2...98b1",
-      custodyTimeline: [...batch.custodyTimeline, newCustodyEvent],
-    };
+      const prepared = await custodyApi.prepareAccept({ batchId: batch.id });
 
-    await executeTx({
-      title: "Accept Custody of Shipment",
-      description: `Sealing on-chain receipt for batch ${batch.id} on Arbitrum Sepolia...`,
-      onCommit: () => {
-        const all = getStoredBatches();
-        const updated = all.map((b) => (b.id === batch.id ? updatedBatch : b));
-        saveStoredBatches(updated);
-      },
-    });
+      const signer = await getSigner();
+      if (!signer) {
+        throw new Error("Wallet not connected. Please connect your distributor wallet.");
+      }
+
+      const { txHash } = await submitTx(signer, prepared, {
+        onTxSubmitted: (hash) => {
+          setTxInfo({
+            state: "pending_onchain",
+            txHash: hash,
+            title: "Accepting Custody",
+            description: "Custody acceptance submitted to Arbitrum Sepolia...",
+          });
+        },
+      });
+
+      setTxInfo({
+        state: "confirming_index",
+        txHash,
+        title: "Indexing Transfer",
+        description: "Waiting for custody acceptance to be indexed...",
+      });
+
+      // Poll indexer
+      let attempts = 0;
+      while (attempts < 15) {
+        await new Promise((r) => setTimeout(r, 2000));
+        try {
+          const statusRes = await apiClient.get<any>(`/indexer/status?txHash=${txHash}`);
+          if (statusRes?.indexed) break;
+        } catch {}
+        attempts++;
+      }
+
+      setTxInfo({
+        state: "confirmed",
+        txHash,
+        title: "Custody Accepted",
+        description: `Batch ${batch.id} successfully accepted into distributor inventory!`,
+      });
+
+      // Update local storage and reload
+      const newCustodyEvent: CustodyEvent = {
+        id: `cust-${Date.now()}`,
+        timestamp: new Date().toISOString(),
+        stage: "ReceivedByDistributor",
+        actorRole: "Distributor",
+        actorName: currentStakeholder?.name || "SwiftLogistics Health",
+        actorAddress: address || "0x3A2...98b1",
+        txHash,
+        blockNumber: 0,
+        location: "Newark Logistics Hub Intake Bay",
+        notes: "Physical seal verified intact. Cold chain temperature compliant.",
+        temperatureVerified: true,
+      };
+
+      const updatedBatch: BatchRecord = {
+        ...batch,
+        status: "Valid",
+        currentCustodianRole: "Distributor",
+        currentCustodianName: currentStakeholder?.name || "SwiftLogistics Health",
+        currentCustodianAddress: address || "0x3A2...98b1",
+        custodyTimeline: [...batch.custodyTimeline, newCustodyEvent],
+      };
+
+      const all = getStoredBatches();
+      const updated = all.map((b) => (b.id === batch.id ? updatedBatch : b));
+      saveStoredBatches(updated);
+      window.dispatchEvent(new Event("medtrace_data_updated"));
+
+      setBatches((prev) => prev.filter((b) => b.id !== batch.id));
+    } catch (err: any) {
+      const parsed = parseCustodyError(err);
+      setInlineErrors((prev) => ({ ...prev, [batch.id]: parsed.message }));
+      setTxInfo({
+        state: "error",
+        title: "Custody Acceptance Blocked",
+        description: parsed.message,
+        error: parsed.message,
+      });
+    } finally {
+      setProcessingBatchId(null);
+    }
   };
+
+  const incomingBatches = batches;
 
   return (
     <div className="space-y-6">
@@ -167,6 +259,13 @@ export default function DistributorIncomingPage() {
                 </div>
               </div>
 
+              {inlineErrors[batch.id] && (
+                <div className="p-3 bg-rose-50 border border-rose-200 rounded-2xl text-[11px] text-rose-800">
+                  <span className="font-bold">Intake Blocked: </span>
+                  <span>{inlineErrors[batch.id]}</span>
+                </div>
+              )}
+
               <div className="pt-2 flex items-center justify-between gap-3">
                 <Link
                   href={`/distributor/batches/${batch.id}`}
@@ -177,11 +276,20 @@ export default function DistributorIncomingPage() {
 
                 <button
                   onClick={() => handleAcceptCustody(batch)}
-                  className="px-5 py-2 rounded-xl text-xs font-bold text-white shadow-sm transition-all hover:scale-105 active:scale-95 flex items-center gap-1.5"
+                  disabled={processingBatchId === batch.id}
+                  className={`px-5 py-2 rounded-xl text-xs font-bold text-white shadow-sm transition-all flex items-center gap-1.5 ${
+                    processingBatchId === batch.id
+                      ? "opacity-70 cursor-not-allowed"
+                      : "hover:scale-105 active:scale-95"
+                  }`}
                   style={{ backgroundColor: "#0284C7" }}
                 >
                   <CheckCircle2 size={14} />
-                  <span>Verify & Accept Custody</span>
+                  <span>
+                    {processingBatchId === batch.id
+                      ? "Accepting on L2..."
+                      : "Verify & Accept Custody"}
+                  </span>
                 </button>
               </div>
             </div>

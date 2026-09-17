@@ -198,16 +198,16 @@ Stage 10 HARDENING & FULL INTEGRATION PASS
 ## 8. Stage 5 — Custody Loop
 
 **Backend first**
-- [ ] `src/custody/` — `GET /custody/incoming?org=`, `POST /custody/prepare-transfer`, `POST /custody/prepare-accept`, `GET /custody/history/:batchId`
-- [ ] Indexer handles `CustodyInitiated` / `CustodyAccepted` → `custody_transfers`
-- [ ] 409 codes: `NOT_CURRENT_CUSTODIAN`, `BATCH_ALREADY_ACCEPTED`, `NO_PENDING_TRANSFER`
+- [x] `src/custody/` — `GET /custody/incoming?org=`, `POST /custody/prepare-transfer`, `POST /custody/prepare-accept`, `GET /custody/history/:batchId`
+- [x] Indexer handles `CustodyInitiated` / `CustodyAccepted` → `custody_transfers`
+- [x] 409 codes: `NOT_CURRENT_CUSTODIAN`, `BATCH_ALREADY_ACCEPTED`, `NO_PENDING_TRANSFER`
 
 **Frontend next**
-- [ ] `lib/api/custody.ts`, `lib/hooks/useCustody.ts`
-- [ ] `app/manufacturer/batches/[id]/transfer/page.tsx`
-- [ ] `app/distributor/` — `page.tsx`, `incoming/`, `scan/`, `inventory/`, `transfer/`, `batches/[id]/`
-- [ ] `app/pharmacy/incoming/page.tsx`, `app/pharmacy/inventory/page.tsx`, `app/pharmacy/batches/[id]/page.tsx`
-- [ ] `CustodyTimeline` wired with real data in `full` mode
+- [x] `lib/api/custody.ts`, `lib/hooks/useCustody.ts`
+- [x] `app/manufacturer/batches/[id]/transfer/page.tsx`
+- [x] `app/distributor/` — `page.tsx`, `incoming/`, `scan/`, `inventory/`, `transfer/`, `batches/[id]/`
+- [x] `app/pharmacy/incoming/page.tsx`, `app/pharmacy/inventory/page.tsx`, `app/pharmacy/batches/[id]/page.tsx`
+- [x] `CustodyTimeline` wired with real data in `full` mode
 
 **Verify:** full chain with three distinct wallets — Manufacturer initiates → Distributor scans QR + accepts → Distributor initiates → Pharmacy scans + accepts. `GET /custody/history/:batchId` shows all four hops in order. Multi-batch transfer submits **sequentially** (nonce ordering), not in parallel. Attempting to accept a batch not assigned to you returns a specific 409 shown inline.
 

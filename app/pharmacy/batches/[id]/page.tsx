@@ -15,7 +15,9 @@ import {
   Zap,
 } from "lucide-react";
 import { getStoredBatches } from "@/lib/mockData";
-import { BatchRecord } from "@/lib/types";
+import { BatchRecord, CustodyEvent } from "@/lib/types";
+import { batchesApi, mapApiBatchToRecord } from "@/lib/api/batches";
+import { custodyApi, mapCustodyHistoryToEvents } from "@/lib/api/custody";
 import StatusBadge from "@/components/shared/StatusBadge";
 import CustodyTimeline from "@/components/shared/CustodyTimeline";
 import IPFSDocPreview from "@/components/shared/IPFSDocPreview";
@@ -29,14 +31,51 @@ export default function PharmacyBatchDetailPage({
 }) {
   const resolvedParams = use(params);
   const [batch, setBatch] = useState<BatchRecord | null>(null);
+  const [timelineEvents, setTimelineEvents] = useState<CustodyEvent[]>([]);
   const [showQrModal, setShowQrModal] = useState(false);
 
   useEffect(() => {
-    const batches = getStoredBatches();
-    const found = batches.find((b) => b.id === resolvedParams.id);
-    if (found) {
-      setBatch(found);
-    }
+    let isMounted = true;
+    const loadBatchAndHistory = async () => {
+      let currentRecord: BatchRecord | null = null;
+      try {
+        const apiBatch = await batchesApi.getBatchById(resolvedParams.id);
+        if (apiBatch && isMounted) {
+          currentRecord = mapApiBatchToRecord(apiBatch);
+          setBatch(currentRecord);
+        }
+      } catch {
+        // Fallback
+      }
+
+      if (!currentRecord) {
+        const batches = getStoredBatches();
+        const found = batches.find((b) => b.id === resolvedParams.id);
+        if (found && isMounted) {
+          currentRecord = found;
+          setBatch(found);
+          setTimelineEvents(found.custodyTimeline);
+        }
+      }
+
+      // Try fetching live custody history from backend
+      try {
+        const historyRes = await custodyApi.getCustodyHistory(resolvedParams.id);
+        if (historyRes && isMounted) {
+          const events = mapCustodyHistoryToEvents(historyRes, currentRecord?.mfgDate);
+          if (events.length > 0) {
+            setTimelineEvents(events);
+          }
+        }
+      } catch {
+        // Use timeline from batch
+      }
+    };
+
+    loadBatchAndHistory();
+    return () => {
+      isMounted = false;
+    };
   }, [resolvedParams.id]);
 
   if (!batch) {
@@ -193,11 +232,14 @@ export default function PharmacyBatchDetailPage({
               End-to-End Custody Provenance
             </h2>
             <span className="text-xs font-bold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-200">
-              {batch.custodyTimeline.length} Provenance Steps
+              {(timelineEvents.length > 0 ? timelineEvents : batch.custodyTimeline).length} Provenance Steps
             </span>
           </div>
 
-          <CustodyTimeline events={batch.custodyTimeline} mode="full" />
+          <CustodyTimeline
+            events={timelineEvents.length > 0 ? timelineEvents : batch.custodyTimeline}
+            mode="full"
+          />
         </div>
 
         <div className="space-y-6">

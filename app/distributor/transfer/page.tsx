@@ -21,11 +21,13 @@ import {
   getStoredBatches,
   saveStoredBatches,
   DEMO_STAKEHOLDERS,
-  generateTxHash,
 } from "@/lib/mockData";
 import { BatchRecord, CustodyEvent } from "@/lib/types";
-import { useTxState } from "@/context/TxStateContext";
 import { useWallet } from "@/context/WalletContext";
+import { useTxFlow } from "@/lib/hooks/useTxFlow";
+import { custodyApi } from "@/lib/api/custody";
+import { batchesApi, mapApiBatchToRecord } from "@/lib/api/batches";
+import { parseCustodyError } from "@/lib/hooks/useCustody";
 import { COLORS } from "@/lib/constants";
 
 function DistributorTransferContent() {
@@ -34,23 +36,45 @@ function DistributorTransferContent() {
   const initialBatchId = searchParams.get("batchId") || "";
 
   const { address, currentStakeholder } = useWallet();
-  const { executeTx } = useTxState();
 
   const [batches, setBatches] = useState<BatchRecord[]>([]);
   const [selectedBatchId, setSelectedBatchId] = useState(initialBatchId);
   const [selectedPharmacyId, setSelectedPharmacyId] = useState("stk-3");
-  const [quantityToTransfer, setQuantityToTransfer] = useState<number>(100);
+  const [customPharmacyWallet, setCustomPharmacyWallet] = useState("0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC");
   const [carrierNotes, setCarrierNotes] = useState(
     "Local refrigerated medical courier van #NY-4402. Direct drop-off."
   );
   const [tempVerified, setTempVerified] = useState(true);
+  const [inlineError, setInlineError] = useState<string | null>(null);
 
   useEffect(() => {
-    const all = getStoredBatches();
-    setBatches(all);
-    if (!selectedBatchId && all.length > 0) {
-      setSelectedBatchId(all[0].id);
-    }
+    const loadBatches = async () => {
+      try {
+        const res = await batchesApi.listBatches();
+        const apiBatches = (res.data || [])
+          .map(mapApiBatchToRecord)
+          .filter((b) => b.currentCustodianRole === "Distributor" && b.status === "Valid");
+        const stored = getStoredBatches().filter(
+          (b) => b.currentCustodianRole === "Distributor" && b.status === "Valid"
+        );
+        const ids = new Set(apiBatches.map((b) => b.id));
+        const merged = [...apiBatches, ...stored.filter((b) => !ids.has(b.id))];
+        setBatches(merged);
+        if (!selectedBatchId && merged.length > 0) {
+          setSelectedBatchId(merged[0].id);
+        }
+      } catch {
+        const stored = getStoredBatches().filter(
+          (b) => b.currentCustodianRole === "Distributor" && b.status === "Valid"
+        );
+        setBatches(stored);
+        if (!selectedBatchId && stored.length > 0) {
+          setSelectedBatchId(stored[0].id);
+        }
+      }
+    };
+
+    loadBatches();
   }, [selectedBatchId]);
 
   const pharmacies = DEMO_STAKEHOLDERS.filter((s) => s.role === "PHARMACY_ROLE");
@@ -58,48 +82,70 @@ function DistributorTransferContent() {
     pharmacies.find((p) => p.id === selectedPharmacyId) || pharmacies[0];
   const selectedBatch = batches.find((b) => b.id === selectedBatchId);
 
+  const txFlow = useTxFlow({
+    prepare: async () => {
+      setInlineError(null);
+      if (!selectedBatch) throw new Error("No batch selected for transfer");
+      const targetAddress = customPharmacyWallet.trim() || selectedPharmacy.address;
+      try {
+        return await custodyApi.prepareTransfer({
+          batchId: selectedBatch.id,
+          toWalletAddress: targetAddress,
+        });
+      } catch (err: any) {
+        const parsed = parseCustodyError(err);
+        setInlineError(parsed.message);
+        throw err;
+      }
+    },
+    title: "Dispatch to Licensed Pharmacy",
+    description: `Transferring custody of ${selectedBatch?.id || 'batch'} to ${selectedPharmacy.name} on Arbitrum Sepolia...`,
+    onSuccess: ({ txHash }) => {
+      if (!selectedBatch) return;
+      const targetAddress = customPharmacyWallet.trim() || selectedPharmacy.address;
+      const newCustodyEvent: CustodyEvent = {
+        id: `cust-${Date.now()}`,
+        timestamp: new Date().toISOString(),
+        stage: "TransferredToPharmacy",
+        actorRole: "Distributor",
+        actorName: currentStakeholder?.name || "SwiftLogistics Health",
+        actorAddress: address || "0x3A2...98b1",
+        toActorName: selectedPharmacy.name,
+        toActorAddress: targetAddress,
+        txHash,
+        blockNumber: 0,
+        location: "Newark Distribution Dock 3",
+        notes: carrierNotes,
+        temperatureVerified: tempVerified,
+      };
+
+      const updatedBatch: BatchRecord = {
+        ...selectedBatch,
+        status: "InTransit",
+        currentCustodianRole: "Pharmacy",
+        currentCustodianName: selectedPharmacy.name,
+        currentCustodianAddress: targetAddress,
+        custodyTimeline: [...selectedBatch.custodyTimeline, newCustodyEvent],
+      };
+
+      const all = getStoredBatches();
+      const updated = all.map((b) =>
+        b.id === selectedBatch.id ? updatedBatch : b
+      );
+      saveStoredBatches(updated);
+      window.dispatchEvent(new Event("medtrace_data_updated"));
+
+      router.push(`/distributor/batches/${selectedBatch.id}`);
+    },
+    onError: (err: any) => {
+      const parsed = parseCustodyError(err);
+      setInlineError(parsed.message);
+    },
+  });
+
   const handleConfirmTransfer = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedBatch) return;
-
-    const transferTx = generateTxHash();
-
-    const newCustodyEvent: CustodyEvent = {
-      id: `cust-${Date.now()}`,
-      timestamp: new Date().toISOString(),
-      stage: "TransferredToPharmacy",
-      actorRole: "Distributor",
-      actorName: currentStakeholder?.name || "SwiftLogistics Health",
-      actorAddress: address || "0x3A2...98b1",
-      toActorName: selectedPharmacy.name,
-      toActorAddress: selectedPharmacy.address,
-      txHash: transferTx,
-      blockNumber: 1998100,
-      location: "Newark Distribution Dock 3",
-      notes: carrierNotes,
-      temperatureVerified: tempVerified,
-    };
-
-    const updatedBatch: BatchRecord = {
-      ...selectedBatch,
-      status: "PendingAcceptance",
-      currentCustodianRole: "Pharmacy",
-      currentCustodianName: selectedPharmacy.name,
-      currentCustodianAddress: selectedPharmacy.address,
-      custodyTimeline: [...selectedBatch.custodyTimeline, newCustodyEvent],
-    };
-
-    await executeTx({
-      title: "Dispatch to Licensed Pharmacy",
-      description: `Transferring custody of ${selectedBatch.id} to ${selectedPharmacy.name} on L2...`,
-      onCommit: () => {
-        const updated = batches.map((b) =>
-          b.id === selectedBatch.id ? updatedBatch : b
-        );
-        saveStoredBatches(updated);
-        router.push(`/distributor/batches/${selectedBatch.id}`);
-      },
-    });
+    await txFlow.execute();
   };
 
   return (
@@ -169,6 +215,23 @@ function DistributorTransferContent() {
 
           <div>
             <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1.5">
+              Destination Pharmacy Node Wallet (Arbitrum Sepolia):
+            </label>
+            <input
+              type="text"
+              required
+              value={customPharmacyWallet}
+              onChange={(e) => setCustomPharmacyWallet(e.target.value)}
+              placeholder="0x..."
+              className="w-full px-4 py-2.5 rounded-xl border border-gray-200 text-xs font-mono focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+            />
+            <p className="text-[11px] text-gray-400 mt-1">
+              Must be registered with PHARMACY_ROLE on AccessControl smart contract.
+            </p>
+          </div>
+
+          <div>
+            <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1.5">
               Courier / Delivery Manifest:
             </label>
             <input
@@ -193,16 +256,30 @@ function DistributorTransferContent() {
             </span>
           </label>
 
+          {inlineError && (
+            <div className="p-3.5 bg-rose-50 border border-rose-200 rounded-2xl text-xs text-rose-800 flex items-start gap-2">
+              <span className="font-bold">Transfer Blocked: </span>
+              <span>{inlineError}</span>
+            </div>
+          )}
+
           <button
             type="submit"
-            className="w-full py-3.5 px-6 rounded-2xl font-extrabold text-sm text-white shadow-lg transition-all hover:scale-105 active:scale-95 flex items-center justify-center gap-2"
+            disabled={txFlow.isProcessing}
+            className={`w-full py-3.5 px-6 rounded-2xl font-extrabold text-sm text-white shadow-lg transition-all flex items-center justify-center gap-2 ${
+              txFlow.isProcessing ? 'opacity-70 cursor-not-allowed' : 'hover:scale-105 active:scale-95'
+            }`}
             style={{
               backgroundColor: COLORS.magenta,
               boxShadow: "0 6px 20px rgba(246, 32, 136, 0.35)",
             }}
           >
             <Send size={16} />
-            <span>Sign & Dispatch to Pharmacy</span>
+            <span>
+              {txFlow.isProcessing
+                ? "Signing & Confirming on L2..."
+                : "Sign & Dispatch to Pharmacy"}
+            </span>
           </button>
         </form>
       </div>
