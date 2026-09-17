@@ -12,6 +12,8 @@ import { COLORS } from "@/lib/constants";
 import StatusBadge from "@/components/shared/StatusBadge";
 import { type BatchStatus, type CustodyEvent } from "@/lib/types";
 import CustodyTimeline from "@/components/shared/CustodyTimeline";
+import { getStoredBatches } from "@/lib/mockData";
+import QRScannerModal from "@/components/shared/QRScannerModal";
 
 /* ---------------------------------------------------------------
    Patient Verification Page — /verify
@@ -144,24 +146,65 @@ export default function VerifyPage() {
   const [batchInput, setBatchInput] = useState("");
   const [state, setState] = useState<VerifyState>("idle");
   const [result, setResult] = useState<MockBatch | null>(null);
+  const [isScannerOpen, setIsScannerOpen] = useState(false);
 
-  const handleVerify = () => {
-    const trimmed = batchInput.trim().toUpperCase();
+  const executeLookup = (searchTerm: string) => {
+    const trimmed = searchTerm.trim().toUpperCase();
     if (!trimmed) return;
 
     setState("loading");
 
-    // Simulate network delay for the read-only chain query
     setTimeout(() => {
-      const found = MOCK_BATCHES[trimmed];
-      if (found) {
-        setResult(found);
+      // 1. Check dynamic stored batches (created by manufacturer or updated across supply chain)
+      const stored = getStoredBatches();
+      const foundStored = stored.find(
+        (b) =>
+          b.id.toUpperCase() === trimmed ||
+          b.batchNumber.toUpperCase() === trimmed ||
+          (b.qrPayload && b.qrPayload.toUpperCase().includes(trimmed))
+      );
+
+      if (foundStored) {
+        setResult({
+          id: foundStored.id,
+          product: foundStored.productName,
+          dosage: foundStored.dosage,
+          manufacturer: foundStored.manufacturerName,
+          mfgDate: foundStored.mfgDate,
+          expDate: foundStored.expDate,
+          status: foundStored.status,
+          timeline: foundStored.custodyTimeline,
+        });
         setState("found");
-      } else {
-        setResult(null);
-        setState("not-found");
+        return;
       }
-    }, 1200);
+
+      // 2. Fallback to preset mock batches
+      const foundMock = MOCK_BATCHES[trimmed];
+      if (foundMock) {
+        setResult(foundMock);
+        setState("found");
+        return;
+      }
+
+      // 3. Not found
+      setResult(null);
+      setState("not-found");
+    }, 800);
+  };
+
+  const handleVerify = () => {
+    executeLookup(batchInput);
+  };
+
+  const handleScanSuccess = (decodedVal: string) => {
+    let cleanId = decodedVal.trim();
+    if (cleanId.startsWith("MEDTRACE:")) {
+      const parts = cleanId.split(":");
+      cleanId = parts[1] || cleanId;
+    }
+    setBatchInput(cleanId);
+    executeLookup(cleanId);
   };
 
   const handleReset = () => {
@@ -289,20 +332,26 @@ export default function VerifyPage() {
             </button>
           </div>
 
-          {/* QR scan hint */}
-          <div
-            className="mt-text-muted"
-            style={{
-              fontSize: 13,
-              marginTop: 14,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              gap: 6,
-            }}
-          >
-            <QrCode size={14} />
-            QR scanner coming soon — enter batch number for now
+          {/* QR scan button */}
+          <div style={{ marginTop: 14 }}>
+            <button
+              type="button"
+              onClick={() => setIsScannerOpen(true)}
+              className="mt-text-indigo"
+              style={{
+                background: "none",
+                border: "none",
+                fontSize: 13,
+                cursor: "pointer",
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 6,
+                fontWeight: 600,
+              }}
+            >
+              <QrCode size={16} />
+              <span>Scan medicine packaging QR code with camera</span>
+            </button>
           </div>
 
           {/* Demo hint */}
@@ -608,6 +657,16 @@ export default function VerifyPage() {
           </div>
         )}
       </section>
+
+      {/* QR Scanner Camera Modal */}
+      <QRScannerModal
+        isOpen={isScannerOpen}
+        onClose={() => setIsScannerOpen(false)}
+        onScanSuccess={handleScanSuccess}
+        title="Scan Medicine Box"
+        subtitle="Align the QR code on the packaging within the viewfinder"
+        expectedType="batch"
+      />
     </div>
   );
 }

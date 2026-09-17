@@ -12,18 +12,23 @@ import EmptyState from "./EmptyState";
 import { COLORS } from "@/lib/constants";
 
 export interface Column<T> {
-  header: string;
+  header?: string;
+  label?: string;
   accessorKey?: keyof T;
+  key?: keyof T | string;
   cell?: (item: T) => React.ReactNode;
+  render?: (item: T) => React.ReactNode;
   sortable?: boolean;
   className?: string;
+  width?: string;
 }
 
 interface DataTableProps<T> {
   data: T[];
   columns: Column<T>[];
   searchPlaceholder?: string;
-  searchFields?: (keyof T)[];
+  searchFields?: (keyof T | string)[];
+  searchKeys?: (keyof T | string)[];
   itemsPerPage?: number;
   emptyTitle?: string;
   emptyDescription?: string;
@@ -43,6 +48,7 @@ export default function DataTable<T extends Record<string, any>>({
   columns,
   searchPlaceholder = "Search records...",
   searchFields,
+  searchKeys,
   itemsPerPage = 8,
   emptyTitle = "No records found",
   emptyDescription = "There are no matching entries in the on-chain ledger.",
@@ -59,6 +65,7 @@ export default function DataTable<T extends Record<string, any>>({
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("asc");
 
   // Filtering
+  const activeSearchFields = searchFields || searchKeys;
   const filteredData = useMemo(() => {
     return data.filter((item) => {
       // 1. Dropdown Filter
@@ -74,8 +81,8 @@ export default function DataTable<T extends Record<string, any>>({
       if (!searchQuery.trim()) return true;
       const query = searchQuery.toLowerCase();
 
-      if (searchFields && searchFields.length > 0) {
-        return searchFields.some((field) => {
+      if (activeSearchFields && activeSearchFields.length > 0) {
+        return activeSearchFields.some((field) => {
           const val = item[field];
           return val && String(val).toLowerCase().includes(query);
         });
@@ -85,7 +92,7 @@ export default function DataTable<T extends Record<string, any>>({
         (val) => val && String(val).toLowerCase().includes(query)
       );
     });
-  }, [data, searchQuery, selectedFilter, filterOptions, searchFields]);
+  }, [data, searchQuery, selectedFilter, filterOptions, activeSearchFields]);
 
   // Sorting
   const sortedData = useMemo(() => {
@@ -194,21 +201,28 @@ export default function DataTable<T extends Record<string, any>>({
           <table className="w-full text-left text-xs">
             <thead className="bg-gray-50/80 text-gray-500 font-bold uppercase tracking-wider border-b border-gray-100">
               <tr>
-                {columns.map((col, idx) => (
-                  <th
-                    key={idx}
-                    className={`py-3.5 px-4 ${col.className || ""}`}
-                    onClick={() => col.sortable && handleSort(col.accessorKey)}
-                    style={{ cursor: col.sortable ? "pointer" : "default" }}
-                  >
-                    <div className="flex items-center gap-1">
-                      <span>{col.header}</span>
-                      {col.sortable && (
-                        <ArrowUpDown size={12} className="text-gray-400" />
-                      )}
-                    </div>
-                  </th>
-                ))}
+                {columns.map((col, idx) => {
+                  const headerText = col.header ?? col.label ?? "";
+                  const colKey = (col.accessorKey ?? col.key) as keyof T | undefined;
+                  return (
+                    <th
+                      key={idx}
+                      className={`py-3.5 px-4 ${col.className || ""}`}
+                      onClick={() => col.sortable && handleSort(colKey)}
+                      style={{
+                        width: col.width,
+                        cursor: col.sortable ? "pointer" : "default",
+                      }}
+                    >
+                      <div className="flex items-center gap-1">
+                        <span>{headerText}</span>
+                        {col.sortable && (
+                          <ArrowUpDown size={12} className="text-gray-400" />
+                        )}
+                      </div>
+                    </th>
+                  );
+                })}
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100 font-medium text-gray-700">
@@ -217,18 +231,24 @@ export default function DataTable<T extends Record<string, any>>({
                   key={row.id || rowIdx}
                   className="hover:bg-indigo-50/20 transition-colors"
                 >
-                  {columns.map((col, colIdx) => (
-                    <td
-                      key={colIdx}
-                      className={`py-3.5 px-4 align-middle ${col.className || ""}`}
-                    >
-                      {col.cell
-                        ? col.cell(row)
-                        : col.accessorKey
-                        ? String(row[col.accessorKey] ?? "-")
-                        : null}
-                    </td>
-                  ))}
+                  {columns.map((col, colIdx) => {
+                    const colKey = (col.accessorKey ?? col.key) as keyof T | undefined;
+                    return (
+                      <td
+                        key={colIdx}
+                        className={`py-3.5 px-4 align-middle ${col.className || ""}`}
+                        style={{ width: col.width }}
+                      >
+                        {col.cell
+                          ? col.cell(row)
+                          : col.render
+                          ? col.render(row)
+                          : colKey
+                          ? String(row[colKey] ?? "-")
+                          : null}
+                      </td>
+                    );
+                  })}
                 </tr>
               ))}
             </tbody>

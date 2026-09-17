@@ -24,6 +24,7 @@ export type DispensingType = "OTC" | "Prescription";
 export type BatchStatus =
   | "Valid"
   | "InTransit"
+  | "Pending"
   | "PendingAcceptance"
   | "Dispensed"
   | "Expired"
