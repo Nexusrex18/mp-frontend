@@ -12,6 +12,7 @@ import {
   TrendingDown,
   ShieldCheck,
   RefreshCw,
+  Brain,
 } from "lucide-react";
 import { COLORS } from "@/lib/constants";
 import { batchesApi } from "@/lib/api/batches";
@@ -19,6 +20,7 @@ import { usersApi } from "@/lib/api/users";
 import { verificationApi } from "@/lib/api/verification";
 import { auditApi } from "@/lib/api/audit";
 import { AuditLogEntryDto, AuditStatsDto } from "@/lib/api/types";
+import { isFeatureEnabled } from "@/lib/config/features";
 
 /* ---------------------------------------------------------------
    Admin Dashboard — /admin
@@ -35,12 +37,17 @@ const QUICK_LINKS = [
 
 export default function AdminDashboard() {
   const [loading, setLoading] = useState(true);
+  const [aiEnabled, setAiEnabled] = useState(false);
   const [totalBatches, setTotalBatches] = useState<number>(0);
   const [totalStakeholders, setTotalStakeholders] = useState<number>(0);
   const [pendingRequests, setPendingRequests] = useState<number>(0);
   const [flaggedAlerts, setFlaggedAlerts] = useState<number>(0);
   const [auditStats, setAuditStats] = useState<AuditStatsDto | null>(null);
   const [recentLogs, setRecentLogs] = useState<AuditLogEntryDto[]>([]);
+
+  useEffect(() => {
+    setAiEnabled(isFeatureEnabled("ENABLE_AI_MODULE"));
+  }, []);
 
   const loadDashboardData = async () => {
     try {
@@ -317,7 +324,18 @@ export default function AdminDashboard() {
             >
               Quick Access
             </div>
-            {QUICK_LINKS.map((link) => (
+            {[
+              ...QUICK_LINKS,
+              ...(aiEnabled
+                ? [
+                    {
+                      label: "Demand Intelligence (AI)",
+                      href: "/admin/intelligence",
+                      icon: Brain,
+                    },
+                  ]
+                : []),
+            ].map((link) => (
               <Link
                 key={link.label}
                 href={link.href}

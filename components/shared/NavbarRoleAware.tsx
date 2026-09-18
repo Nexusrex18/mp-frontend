@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
@@ -26,12 +26,18 @@ import WalletConnectButton from "./WalletConnectButton";
 import NetworkGuard from "./NetworkGuard";
 import { COLORS } from "@/lib/constants";
 import { Role } from "@/lib/types";
+import { isFeatureEnabled } from "@/lib/config/features";
 
 export default function NavbarRoleAware() {
   const pathname = usePathname();
   const { role, roleName } = useRole();
   const { isConnected, currentStakeholder } = useWallet();
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [aiEnabled, setAiEnabled] = useState(false);
+
+  useEffect(() => {
+    setAiEnabled(isFeatureEnabled("ENABLE_AI_MODULE"));
+  }, []);
 
   // Define nav links for each role
   const getNavLinks = (userRole: Role) => {
@@ -98,6 +104,7 @@ export default function NavbarRoleAware() {
           { href: "/admin/stakeholders", label: "Stakeholders", icon: Building2 },
           { href: "/admin/batches", label: "Global Batches", icon: Package },
           { href: "/admin/audit", label: "Audit Trail", icon: History },
+          ...(aiEnabled ? [{ href: "/admin/intelligence", label: "AI Intelligence", icon: Sparkles }] : []),
         ];
       default:
         return [

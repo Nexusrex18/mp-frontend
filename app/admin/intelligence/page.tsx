@@ -1,16 +1,29 @@
 "use client";
 
-import { Brain, TrendingUp, BarChart3, Lightbulb } from "lucide-react";
+import React, { useState, useEffect } from "react";
+import Link from "next/link";
+import {
+  Brain,
+  TrendingUp,
+  BarChart3,
+  Lightbulb,
+  ShieldAlert,
+  ArrowLeft,
+  CheckCircle2,
+  ToggleLeft,
+  ToggleRight,
+  Info,
+} from "lucide-react";
 import { COLORS } from "@/lib/constants";
+import { isFeatureEnabled } from "@/lib/config/features";
 
 /* ---------------------------------------------------------------
-   Admin — Demand Intelligence (Phase 8 — Optional Module)
+   Admin — Demand Intelligence (Stage 9 — Optional Module)
    
-   Purpose: Read-only display of the off-chain AI pipeline's output.
-   Data in: reads from SupplyManager.sol (values written by the
-            separate Python pipeline — out of scope for this frontend).
-   Data out: NONE — display only, never writes to core state.
-   Isolation rule: no other page depends on this existing.
+   Purpose: Read-only display of off-chain AI forecasting & sentiment analysis.
+   Isolation Rule: No other page, contract, or backend service depends on this.
+   Feature Flag: Controlled by NEXT_PUBLIC_ENABLE_AI_MODULE.
+   When disabled: Returns disabled state; zero impact on core operations.
 ----------------------------------------------------------------*/
 
 const FORECAST_DATA = [
@@ -35,244 +48,247 @@ const QUOTA_SUGGESTIONS = [
 ];
 
 export default function AdminIntelligencePage() {
+  const [enabled, setEnabled] = useState<boolean>(false);
+  const [mounted, setMounted] = useState<boolean>(false);
+
+  useEffect(() => {
+    setEnabled(isFeatureEnabled("ENABLE_AI_MODULE"));
+    setMounted(true);
+  }, []);
+
+  const handleToggleLocal = () => {
+    const next = !enabled;
+    setEnabled(next);
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem("FEATURE_ENABLE_AI_MODULE", String(next));
+    }
+  };
+
+  if (!mounted) {
+    return null;
+  }
+
+  // Feature Flag OFF: Display isolated disabled state
+  if (!enabled) {
+    return (
+      <div style={{ maxWidth: 720, margin: "60px auto", padding: "0 24px" }}>
+        <div className="bg-white rounded-3xl p-8 border border-slate-200 shadow-sm text-center">
+          <div className="w-16 h-16 rounded-2xl bg-indigo-50 border border-indigo-100 flex items-center justify-center mx-auto mb-4 text-indigo-600">
+            <Brain size={32} />
+          </div>
+
+          <span className="mt-mono text-xs font-bold uppercase tracking-wider text-slate-400 block mb-1">
+            Stage 9 Optional Module
+          </span>
+          <h1 className="text-2xl font-bold text-slate-900 mb-2">
+            Demand Intelligence is Disabled
+          </h1>
+          <p className="text-sm text-slate-600 max-w-md mx-auto mb-6 leading-relaxed">
+            The AI Demand Intelligence module is currently disabled by configuration (`NEXT_PUBLIC_ENABLE_AI_MODULE=false`).
+            In adherence to the system isolation rules, core supply chain operations, batch tracking, and dispensing continue unaffected.
+          </p>
+
+          <div className="flex items-center justify-center gap-4 flex-wrap">
+            <Link
+              href="/admin"
+              className="inline-flex items-center gap-2 px-4 py-2 text-xs font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-xl transition-colors cursor-pointer"
+            >
+              <ArrowLeft size={14} /> Back to Dashboard
+            </Link>
+
+            <button
+              onClick={handleToggleLocal}
+              className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-bold text-indigo-600 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 rounded-xl transition-colors cursor-pointer"
+            >
+              <ToggleRight size={16} /> Enable in This Session (Demo Mode)
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Feature Flag ON: Display full read-only intelligence dashboard
   return (
     <div style={{ maxWidth: 1180, margin: "0 auto", padding: "32px 24px" }}>
       {/* Header */}
-      <div style={{ marginBottom: 32 }}>
-        <div className="flex items-center" style={{ gap: 8, marginBottom: 6 }}>
-          <Brain size={20} color={COLORS.indigo} />
-          <div
-            className="mt-mono"
-            style={{
-              fontSize: 11,
-              fontWeight: 700,
-              color: COLORS.indigo,
-              background: "rgba(62,54,176,0.08)",
-              padding: "3px 10px",
-              borderRadius: 999,
-            }}
-          >
-            OPTIONAL MODULE
+      <div className="flex items-center justify-between flex-wrap gap-4 mb-8">
+        <div>
+          <div className="flex items-center gap-2.5 mb-2">
+            <Brain size={22} color={COLORS.indigo} />
+            <span
+              className="mt-mono text-xs font-bold px-2.5 py-0.5 rounded-full"
+              style={{
+                color: COLORS.indigo,
+                backgroundColor: "rgba(62,54,176,0.08)",
+              }}
+            >
+              OPTIONAL MODULE (ISOLATED)
+            </span>
           </div>
+          <h1 className="mt-display text-2xl font-bold text-slate-900">
+            Demand Intelligence
+          </h1>
+          <p className="text-sm text-slate-500 mt-1 max-w-2xl">
+            AI-generated forecasts, sentiment trends, and supply quota suggestions.
+            This module is strictly read-only and does not modify core supply chain state.
+          </p>
         </div>
-        <h1 className="mt-display" style={{ fontSize: 24, fontWeight: 600 }}>
-          Demand Intelligence
-        </h1>
-        <p className="mt-text-muted" style={{ fontSize: 14, marginTop: 4 }}>
-          AI-generated forecasts, sentiment trends, and supply quota suggestions.
-          This module is read-only and does not affect core supply chain operations.
-        </p>
+
+        <div className="flex items-center gap-3">
+          <button
+            onClick={handleToggleLocal}
+            className="flex items-center gap-2 px-3.5 py-2 text-xs font-semibold text-slate-600 bg-white hover:bg-slate-50 border border-slate-200 rounded-xl transition-colors cursor-pointer"
+            title="Toggle module on/off to test isolation rule"
+          >
+            <ToggleLeft size={16} /> Disable Module
+          </button>
+
+          <Link
+            href="/admin"
+            className="px-3.5 py-2 text-xs font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-xl transition-colors"
+          >
+            Admin Dashboard
+          </Link>
+        </div>
       </div>
 
-      <div className="grid lg:grid-cols-2" style={{ gap: 20, marginBottom: 24 }}>
+      {/* Isolation Notice Banner */}
+      <div className="mb-6 p-4 rounded-2xl bg-indigo-50/70 border border-indigo-100 flex items-center gap-3 text-xs text-indigo-900">
+        <Info size={16} className="text-indigo-600 shrink-0" />
+        <span>
+          <strong>Architecture Rule #7:</strong> This module is decoupled from the core supply chain ledger.
+          No on-chain state or database entity depends on CNN-LSTM or BERT pipelines.
+        </span>
+      </div>
+
+      <div className="grid lg:grid-cols-2 gap-6 mb-6">
         {/* Demand Forecast */}
-        <div
-          style={{
-            border: "1px solid rgba(17,17,17,0.08)",
-            borderRadius: 16,
-            overflow: "hidden",
-          }}
-        >
-          <div
-            className="flex items-center"
-            style={{
-              padding: "16px 20px",
-              gap: 8,
-              borderBottom: "1px solid rgba(17,17,17,0.06)",
-              fontWeight: 700,
-              fontSize: 15,
-            }}
-          >
-            <TrendingUp size={16} color={COLORS.indigo} /> Demand Forecast
-            <span className="mt-mono mt-text-muted" style={{ fontSize: 11, marginLeft: "auto" }}>
+        <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-sm">
+          <div className="flex items-center justify-between p-4 border-b border-slate-100">
+            <div className="flex items-center gap-2 font-bold text-sm text-slate-900">
+              <TrendingUp size={16} color={COLORS.indigo} /> Demand Forecast
+            </div>
+            <span className="mt-mono text-xs font-semibold text-slate-400">
               CNN-LSTM Model
             </span>
           </div>
-          {FORECAST_DATA.map((item) => (
-            <div
-              key={item.drug}
-              className="flex items-center justify-between"
-              style={{
-                padding: "12px 20px",
-                borderBottom: "1px solid rgba(17,17,17,0.04)",
-              }}
-            >
-              <div>
-                <div style={{ fontSize: 14, fontWeight: 600 }}>{item.drug}</div>
-                <div className="mt-text-muted" style={{ fontSize: 12 }}>
-                  Current: {item.current.toLocaleString()} units
+
+          <div className="divide-y divide-slate-100">
+            {FORECAST_DATA.map((item) => (
+              <div
+                key={item.drug}
+                className="flex items-center justify-between p-4 hover:bg-slate-50/50 transition-colors"
+              >
+                <div>
+                  <div className="font-semibold text-sm text-slate-900">{item.drug}</div>
+                  <div className="text-xs text-slate-500 mt-0.5">
+                    Current: {item.current.toLocaleString()} units
+                  </div>
+                </div>
+                <div className="text-right">
+                  <div className="mt-mono font-bold text-sm text-slate-900">
+                    {item.predicted.toLocaleString()} units
+                  </div>
+                  <div
+                    className="mt-mono text-xs font-semibold"
+                    style={{
+                      color: item.trend === "up" ? "#0a5c5f" : COLORS.magenta,
+                    }}
+                  >
+                    {item.change} projected
+                  </div>
                 </div>
               </div>
-              <div style={{ textAlign: "right" }}>
-                <div className="mt-mono" style={{ fontSize: 14, fontWeight: 700 }}>
-                  {item.predicted.toLocaleString()}
-                </div>
-                <div
-                  className="mt-mono"
-                  style={{
-                    fontSize: 12,
-                    fontWeight: 600,
-                    color: item.trend === "up" ? "#0a5c5f" : COLORS.magenta,
-                  }}
-                >
-                  {item.change}
-                </div>
-              </div>
-            </div>
-          ))}
+            ))}
+          </div>
         </div>
 
         {/* Sentiment Trends */}
-        <div
-          style={{
-            border: "1px solid rgba(17,17,17,0.08)",
-            borderRadius: 16,
-            overflow: "hidden",
-          }}
-        >
-          <div
-            className="flex items-center"
-            style={{
-              padding: "16px 20px",
-              gap: 8,
-              borderBottom: "1px solid rgba(17,17,17,0.06)",
-              fontWeight: 700,
-              fontSize: 15,
-            }}
-          >
-            <BarChart3 size={16} color={COLORS.indigo} /> Sentiment Trends
-            <span className="mt-mono mt-text-muted" style={{ fontSize: 11, marginLeft: "auto" }}>
+        <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-sm">
+          <div className="flex items-center justify-between p-4 border-b border-slate-100">
+            <div className="flex items-center gap-2 font-bold text-sm text-slate-900">
+              <BarChart3 size={16} color={COLORS.indigo} /> Public Sentiment Trends
+            </div>
+            <span className="mt-mono text-xs font-semibold text-slate-400">
               BERT Analysis
             </span>
           </div>
-          {SENTIMENT_DATA.map((item) => (
-            <div
-              key={item.topic}
-              style={{
-                padding: "14px 20px",
-                borderBottom: "1px solid rgba(17,17,17,0.04)",
-              }}
-            >
-              <div
-                className="flex items-center justify-between"
-                style={{ marginBottom: 8 }}
-              >
-                <span style={{ fontSize: 14, fontWeight: 600 }}>
-                  {item.topic}
-                </span>
-                <span
-                  className="mt-mono"
-                  style={{
-                    fontSize: 12,
-                    fontWeight: 700,
-                    color:
-                      item.label === "Positive"
-                        ? "#0a5c5f"
-                        : item.label === "Negative"
+
+          <div className="p-4 space-y-4">
+            {SENTIMENT_DATA.map((item) => (
+              <div key={item.topic} className="space-y-1.5">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="font-semibold text-slate-800">{item.topic}</span>
+                  <span
+                    className="mt-mono font-bold"
+                    style={{
+                      color:
+                        item.label === "Positive"
+                          ? "#0a5c5f"
+                          : item.label === "Negative"
                           ? COLORS.magenta
                           : "rgba(17,17,17,0.5)",
-                  }}
-                >
-                  {item.score}% {item.label}
-                </span>
-              </div>
-              {/* Progress bar */}
-              <div
-                style={{
-                  height: 6,
-                  borderRadius: 3,
-                  background: "rgba(17,17,17,0.06)",
-                  overflow: "hidden",
-                }}
-              >
-                <div
-                  style={{
-                    width: `${item.score}%`,
-                    height: "100%",
-                    borderRadius: 3,
-                    background:
-                      item.label === "Positive"
-                        ? "#0a5c5f"
-                        : item.label === "Negative"
+                    }}
+                  >
+                    {item.score}% {item.label}
+                  </span>
+                </div>
+                <div className="h-2 w-full bg-slate-100 rounded-full overflow-hidden">
+                  <div
+                    className="h-full rounded-full transition-all duration-500"
+                    style={{
+                      width: `${item.score}%`,
+                      backgroundColor:
+                        item.label === "Positive"
+                          ? "#0a5c5f"
+                          : item.label === "Negative"
                           ? COLORS.magenta
                           : COLORS.indigo,
-                    transition: "width 0.6s ease",
-                  }}
-                />
+                    }}
+                  />
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* AI-Suggested Supply Quotas */}
+      <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-sm">
+        <div className="p-4 border-b border-slate-100 flex items-center gap-2 font-bold text-sm text-slate-900">
+          <Lightbulb size={16} color={COLORS.indigo} /> AI-Suggested Supply Quotas (Non-blocking Suggestions)
+        </div>
+
+        <div className="divide-y divide-slate-100">
+          {QUOTA_SUGGESTIONS.map((item) => (
+            <div
+              key={item.drug}
+              className="p-4 flex items-center justify-between flex-wrap gap-4 hover:bg-slate-50/50 transition-colors"
+            >
+              <div className="flex-1 min-w-[240px]">
+                <div className="font-semibold text-sm text-slate-900">{item.drug}</div>
+                <div className="text-xs text-slate-500 mt-1">{item.reason}</div>
+              </div>
+
+              <div className="flex items-center gap-4 text-xs">
+                <div className="text-center">
+                  <span className="text-slate-400 font-bold block text-[10px] uppercase">Current</span>
+                  <span className="mt-mono font-semibold text-slate-700 text-sm">
+                    {item.currentQuota.toLocaleString()}
+                  </span>
+                </div>
+                <span className="text-slate-300 font-bold">→</span>
+                <div className="text-center">
+                  <span className="text-indigo-600 font-bold block text-[10px] uppercase">Suggested</span>
+                  <span className="mt-mono font-bold text-indigo-600 text-sm">
+                    {item.suggestedQuota.toLocaleString()}
+                  </span>
+                </div>
               </div>
             </div>
           ))}
         </div>
-      </div>
-
-      {/* AI-Suggested Quotas */}
-      <div
-        style={{
-          border: "1px solid rgba(17,17,17,0.08)",
-          borderRadius: 16,
-          overflow: "hidden",
-        }}
-      >
-        <div
-          className="flex items-center"
-          style={{
-            padding: "16px 20px",
-            gap: 8,
-            borderBottom: "1px solid rgba(17,17,17,0.06)",
-            fontWeight: 700,
-            fontSize: 15,
-          }}
-        >
-          <Lightbulb size={16} color={COLORS.indigo} /> AI-Suggested Supply
-          Quotas
-        </div>
-        {QUOTA_SUGGESTIONS.map((item) => (
-          <div
-            key={item.drug}
-            className="flex items-center justify-between flex-wrap"
-            style={{
-              padding: "14px 20px",
-              gap: 12,
-              borderBottom: "1px solid rgba(17,17,17,0.04)",
-            }}
-          >
-            <div style={{ flex: 1, minWidth: 200 }}>
-              <div style={{ fontSize: 14, fontWeight: 600 }}>{item.drug}</div>
-              <div className="mt-text-muted" style={{ fontSize: 12, marginTop: 2 }}>
-                {item.reason}
-              </div>
-            </div>
-            <div className="flex items-center" style={{ gap: 12 }}>
-              <div style={{ textAlign: "center" }}>
-                <div className="mt-text-muted" style={{ fontSize: 10 }}>
-                  CURRENT
-                </div>
-                <div className="mt-mono" style={{ fontSize: 14, fontWeight: 600 }}>
-                  {item.currentQuota.toLocaleString()}
-                </div>
-              </div>
-              <span className="mt-text-muted">→</span>
-              <div style={{ textAlign: "center" }}>
-                <div
-                  className="mt-mono"
-                  style={{ fontSize: 10, color: COLORS.indigo }}
-                >
-                  SUGGESTED
-                </div>
-                <div
-                  className="mt-mono"
-                  style={{
-                    fontSize: 14,
-                    fontWeight: 700,
-                    color: COLORS.indigo,
-                  }}
-                >
-                  {item.suggestedQuota.toLocaleString()}
-                </div>
-              </div>
-            </div>
-          </div>
-        ))}
       </div>
     </div>
   );
