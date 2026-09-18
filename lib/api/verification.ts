@@ -3,7 +3,16 @@ import {
   PublicVerifyResponseDto,
   CreateVerificationReportDto,
   CreateVerificationReportResponseDto,
+  VerificationReportsResponseDto,
 } from './types';
+
+export interface GetReportsParams {
+  [key: string]: string | number | boolean | undefined;
+  status?: string;
+  batchId?: string;
+  page?: number;
+  limit?: number;
+}
 
 export const verificationApi = {
   /**
@@ -22,6 +31,16 @@ export const verificationApi = {
     data: CreateVerificationReportDto,
   ): Promise<CreateVerificationReportResponseDto> => {
     return apiClient.post<CreateVerificationReportResponseDto>('/verify/report', data);
+  },
+
+  /**
+   * GET /verify/reports
+   * Admin only: Retrieves consumer and safety incident reports.
+   */
+  getReports: async (
+    params?: GetReportsParams,
+  ): Promise<VerificationReportsResponseDto> => {
+    return apiClient.get<VerificationReportsResponseDto>('/verify/reports', { params });
   },
 
   /**

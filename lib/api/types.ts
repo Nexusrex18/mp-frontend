@@ -461,3 +461,122 @@ export interface DispensingHistoryResponseDto {
   limit: number;
   totalPages: number;
 }
+
+// Admin Stakeholder DTOs
+export interface StakeholderItemDto {
+  id: string;
+  walletAddress: string;
+  role: OrgType;
+  createdAt: string;
+  updatedAt: string;
+  organization?: OrganizationDto | null;
+  registrationRequests?: Array<{
+    id: string;
+    walletAddress: string;
+    organizationName: string;
+    requestedRole: OrgType;
+    status: 'PENDING' | 'APPROVED' | 'REJECTED' | 'REVOKED';
+    createdAt: string;
+    updatedAt: string;
+  }>;
+}
+
+export interface StakeholdersResponseDto {
+  data: StakeholderItemDto[];
+  total: number;
+  count: number;
+  page: number;
+  limit: number;
+  totalPages: number;
+}
+
+export interface RegistrationRequestItemDto {
+  id: string;
+  walletAddress: string;
+  organizationName: string;
+  requestedRole: OrgType;
+  status: 'PENDING' | 'APPROVED' | 'REJECTED' | 'REVOKED';
+  reviewedAt?: string | null;
+  reviewerWallet?: string | null;
+  rejectionReason?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+// Product Management DTOs
+export interface UpdateProductDto {
+  name?: string;
+  dosage?: string;
+  dispensingType?: 'OTC' | 'PRESCRIPTION';
+  regulatoryClassification?: string;
+}
+
+// Audit Log DTOs
+export interface AuditLogEntryDto {
+  id: string;
+  action: string;
+  actorAddress: string;
+  actorRole?: OrgType | null;
+  targetResource: string;
+  targetId?: string | null;
+  ipAddress?: string | null;
+  status: 'SUCCESS' | 'FAILURE';
+  details?: Record<string, unknown> | null;
+  errorMessage?: string | null;
+  createdAt: string;
+}
+
+export interface AuditLogQueryDto {
+  [key: string]: string | number | boolean | undefined;
+  actorAddress?: string;
+  actorRole?: OrgType;
+  action?: string;
+  targetResource?: string;
+  status?: 'SUCCESS' | 'FAILURE';
+  startDate?: string;
+  endDate?: string;
+  page?: number;
+  limit?: number;
+  format?: 'json' | 'csv';
+  export?: boolean;
+}
+
+export interface AuditLogsResponseDto {
+  data: AuditLogEntryDto[];
+  total: number;
+  page: number;
+  limit: number;
+  totalPages: number;
+}
+
+export interface AuditStatsDto {
+  totalEvents: number;
+  todayEvents: number;
+  failureEvents: number;
+  actionBreakdown: Array<{ action: string; count: number }>;
+  roleBreakdown: Array<{ actorRole: string; count: number }>;
+  recentFailureCount: number;
+}
+
+// Verification Report DTOs (Admin review)
+export interface VerificationReportItemDto {
+  id: string;
+  batchId: string | null;
+  description: string;
+  location: string | null;
+  photoUrl: string | null;
+  contactInfo: string | null;
+  reporterIp: string | null;
+  status: 'PENDING' | 'INVESTIGATING' | 'RESOLVED' | 'DISMISSED';
+  createdAt: string;
+  updatedAt: string;
+  batch?: BatchDetailDto | null;
+}
+
+export interface VerificationReportsResponseDto {
+  reports: VerificationReportItemDto[];
+  total: number;
+  page: number;
+  limit: number;
+  totalPages: number;
+}

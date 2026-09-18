@@ -1,5 +1,5 @@
 import { apiClient } from './client';
-import { ProductDto } from './types';
+import { ProductDto, UpdateProductDto } from './types';
 
 export const productsApi = {
   /**
@@ -16,5 +16,13 @@ export const productsApi = {
    */
   getProductById: async (id: string): Promise<ProductDto> => {
     return apiClient.get<ProductDto>(`/products/${encodeURIComponent(id)}`);
+  },
+
+  /**
+   * PATCH /products/:id
+   * Admin updates product classification rules or details.
+   */
+  updateProduct: async (id: string, dto: UpdateProductDto): Promise<ProductDto> => {
+    return apiClient.patch<ProductDto>(`/products/${encodeURIComponent(id)}`, dto);
   },
 };
