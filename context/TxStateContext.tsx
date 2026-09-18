@@ -1,97 +1,78 @@
 "use client";
 
-/* ---------------------------------------------------------------
-   MedTrace — TxStateContext
-   Provides application-wide state for on-chain mutating writes,
-   guaranteeing explicit Review -> Pending (L2) -> Confirmed lifecycle.
-----------------------------------------------------------------*/
-
-import React, { createContext, useContext, useState, ReactNode } from "react";
+import React, { createContext, useContext, ReactNode } from "react";
 import { TxState } from "@/lib/types";
-import { generateTxHash } from "@/lib/mockData";
+import { useTx, TxProvider as BaseTxProvider, TxFlowState } from "./TxContext";
 
-interface ExecuteTxOptions {
-  title: string;
-  description: string;
-  onCommit: () => Promise<any> | any;
-  receiptData?: Record<string, any>;
-}
+export { BaseTxProvider as TxStateProvider };
 
-interface TxStateContextType {
-  txState: TxState;
-  executeTx: (options: ExecuteTxOptions) => Promise<boolean>;
-  resetTx: () => void;
-  isProcessing: boolean;
-}
+// Adapter to provide backwards-compatible useTxState API
+export function useTxState() {
+  const { txInfo, setTxInfo, resetTx, isProcessing } = useTx();
 
-const TxStateContext = createContext<TxStateContextType | undefined>(undefined);
+  let status: "idle" | "reviewing" | "pending" | "confirmed" | "error" = "idle";
+  if (
+    txInfo.state === "awaiting_signature" ||
+    txInfo.state === "pending_onchain" ||
+    txInfo.state === "confirming_index"
+  ) {
+    status = "pending";
+  } else if (txInfo.state === "confirmed") {
+    status = "confirmed";
+  } else if (
+    txInfo.state === "rejected_by_user" ||
+    txInfo.state === "reverted" ||
+    txInfo.state === "error"
+  ) {
+    status = "error";
+  } else if (txInfo.state === "index_timeout") {
+    // Reassuring state
+    status = "confirmed";
+  }
 
-export function TxStateProvider({ children }: { children: ReactNode }) {
-  const [txState, setTxState] = useState<TxState>({ status: "idle" });
-
-  const resetTx = () => {
-    setTxState({ status: "idle" });
+  const txState: TxState = {
+    status,
+    txHash: txInfo.txHash,
+    title: txInfo.title,
+    description: txInfo.description,
+    error: txInfo.error,
+    receiptData: txInfo.receipt,
   };
 
-  const executeTx = async (options: ExecuteTxOptions): Promise<boolean> => {
-    const { title, description, onCommit, receiptData } = options;
-    const generatedHash = generateTxHash();
-
-    // Step 1: Set Pending state
-    setTxState({
-      status: "pending",
-      title,
-      description,
-      txHash: generatedHash,
-      receiptData,
+  const executeTx = async (options: {
+    title: string;
+    description: string;
+    onCommit: () => Promise<any> | any;
+    receiptData?: Record<string, any>;
+  }): Promise<boolean> => {
+    setTxInfo({
+      state: "pending_onchain",
+      title: options.title,
+      description: options.description,
     });
-
     try {
-      // Simulate L2 Block Confirmation delay (2.0 seconds)
-      await new Promise((resolve) => setTimeout(resolve, 2000));
-
-      // Execute client commit callback
-      await onCommit();
-
-      // Step 2: Set Confirmed state
-      setTxState({
-        status: "confirmed",
-        title: `${title} Confirmed`,
-        description: "Transaction successfully sealed on Arbitrum Sepolia L2.",
-        txHash: generatedHash,
-        receiptData,
+      await options.onCommit();
+      setTxInfo({
+        state: "confirmed",
+        title: `${options.title} Confirmed`,
+        description: "Transaction successfully committed.",
       });
-
       return true;
     } catch (err: any) {
-      setTxState({
-        status: "error",
-        title: `${title} Failed`,
-        description: err?.message || "Transaction reverted on chain.",
-        error: err?.message || "Execution error",
+      setTxInfo({
+        state: "error",
+        title: `${options.title} Failed`,
+        description: err?.message || "Transaction failed.",
+        error: err?.message,
       });
       return false;
     }
   };
 
-  return (
-    <TxStateContext.Provider
-      value={{
-        txState,
-        executeTx,
-        resetTx,
-        isProcessing: txState.status === "pending",
-      }}
-    >
-      {children}
-    </TxStateContext.Provider>
-  );
-}
-
-export function useTxState() {
-  const context = useContext(TxStateContext);
-  if (!context) {
-    throw new Error("useTxState must be used within a TxStateProvider");
-  }
-  return context;
+  return {
+    txState,
+    executeTx,
+    resetTx,
+    isProcessing,
+  };
 }

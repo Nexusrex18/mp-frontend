@@ -1,17 +1,23 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, Suspense } from "react";
+import { useSearchParams } from "next/navigation";
 import {
   Search,
   QrCode,
   ShieldCheck,
   AlertTriangle,
   XCircle,
+  Clock,
+  RefreshCw,
 } from "lucide-react";
 import { COLORS } from "@/lib/constants";
 import StatusBadge from "@/components/shared/StatusBadge";
-import { type BatchStatus, type CustodyEvent } from "@/lib/types";
+import { type BatchStatus, type CustodyEvent, type RoleName } from "@/lib/types";
 import CustodyTimeline from "@/components/shared/CustodyTimeline";
+import QRScannerModal from "@/components/shared/QRScannerModal";
+import { useVerify, VerifyState as ApiVerifyState } from "@/lib/hooks/useVerify";
+import { getStoredBatches } from "@/lib/mockData";
 
 /* ---------------------------------------------------------------
    Patient Verification Page — /verify
@@ -22,9 +28,7 @@ import CustodyTimeline from "@/components/shared/CustodyTimeline";
          Found? → check status → show result card
 ----------------------------------------------------------------*/
 
-/* ---------- Mock data (will be replaced by chain reads) ---------- */
-
-interface MockBatch {
+interface DisplayBatch {
   id: string;
   product: string;
   dosage: string;
@@ -35,7 +39,7 @@ interface MockBatch {
   timeline: CustodyEvent[];
 }
 
-const MOCK_BATCHES: Record<string, MockBatch> = {
+const MOCK_BATCHES: Record<string, DisplayBatch> = {
   "A19-0442": {
     id: "A19-0442",
     product: "Amoxicillin",
@@ -96,23 +100,12 @@ const MOCK_BATCHES: Record<string, MockBatch> = {
         actorName: "GenMed Labs",
         actorAddress: "0x...",
         txHash: "0x...",
-        blockNumber: 200,
-        location: "Hyderabad, India",
+        blockNumber: 201,
+        location: "Ahmedabad, India",
         timestamp: "2024-01-15T08:00:00Z",
       },
       {
         id: "ev5",
-        stage: "ReceivedByDistributor",
-        actorRole: "Distributor",
-        actorName: "FastPharma Distributors",
-        actorAddress: "0x...",
-        txHash: "0x...",
-        blockNumber: 201,
-        location: "Chennai, India",
-        timestamp: "2024-01-22T11:20:00Z",
-      },
-      {
-        id: "ev6",
         stage: "ReceivedByPharmacy",
         actorRole: "Pharmacy",
         actorName: "CityMed Pharmacy",
@@ -136,39 +129,146 @@ const MOCK_BATCHES: Record<string, MockBatch> = {
   },
 };
 
-/* ---------- Page component ---------- */
+function mapBackendStatusToBatchStatus(status?: string, isExpired?: boolean): BatchStatus {
+  if (isExpired) return "Expired";
+  const s = (status || "").toUpperCase();
+  if (s === "EXPIRED") return "Expired";
+  if (s === "RECALLED") return "Recalled";
+  if (s === "COUNTERFEIT" || s === "SUSPICIOUS") return "Counterfeit";
+  if (s === "IN_TRANSIT" || s === "INTRANSIT") return "InTransit";
+  if (s === "DISPENSED") return "Dispensed";
+  if (s === "DELIVERED" || s === "CREATED" || s === "VALID") return "Valid";
+  return "Valid";
+}
 
-type VerifyState = "idle" | "loading" | "found" | "not-found";
+function formatDateDisplay(isoString?: string): string {
+  if (!isoString) return "N/A";
+  try {
+    const d = new Date(isoString);
+    if (isNaN(d.getTime())) return isoString;
+    return d.toLocaleDateString("en-US", {
+      day: "2-digit",
+      month: "short",
+      year: "numeric",
+    });
+  } catch {
+    return isoString;
+  }
+}
 
-export default function VerifyPage() {
+function VerifyContent() {
+  const searchParams = useSearchParams();
   const [batchInput, setBatchInput] = useState("");
-  const [state, setState] = useState<VerifyState>("idle");
-  const [result, setResult] = useState<MockBatch | null>(null);
+  const [isScannerOpen, setIsScannerOpen] = useState(false);
+  const [displayResult, setDisplayResult] = useState<DisplayBatch | null>(null);
 
-  const handleVerify = () => {
-    const trimmed = batchInput.trim().toUpperCase();
+  const {
+    state: verifyState,
+    data: verifyData,
+    errorMessage,
+    retryAfter,
+    verifyBatch,
+    reset,
+  } = useVerify();
+
+  const executeLookup = async (searchTerm: string) => {
+    const trimmed = searchTerm.trim().toUpperCase();
     if (!trimmed) return;
 
-    setState("loading");
+    setDisplayResult(null);
 
-    // Simulate network delay for the read-only chain query
-    setTimeout(() => {
-      const found = MOCK_BATCHES[trimmed];
-      if (found) {
-        setResult(found);
-        setState("found");
-      } else {
-        setResult(null);
-        setState("not-found");
-      }
-    }, 1200);
+    // 1. Call real backend read API
+    const resultData = await verifyBatch(trimmed);
+
+    if (resultData) {
+      // Map API response to display model
+      const timeline: CustodyEvent[] = (resultData.timeline || []).map((t, idx) => ({
+        id: t.id || `tl-${idx}`,
+        stage: (t.stage as CustodyEvent["stage"]) || "Manufactured",
+        actorRole: (t.actorRole as RoleName) || "Manufacturer",
+        actorName: t.actorName || "Supply Chain Node",
+        actorAddress: "",
+        txHash: "",
+        blockNumber: 0,
+        timestamp: t.timestamp || resultData.manufacturingDate,
+        location: t.location || "Verified Facility",
+      }));
+
+      setDisplayResult({
+        id: resultData.identifier || resultData.id || trimmed,
+        product: resultData.medicine?.name || resultData.product || "Pharmaceutical Product",
+        dosage: resultData.medicine?.dosage || resultData.dosage || "",
+        manufacturer: resultData.manufacturer || "Verified Manufacturer",
+        mfgDate: resultData.mfgDate || formatDateDisplay(resultData.manufacturingDate),
+        expDate: resultData.expDate || formatDateDisplay(resultData.expiryDate),
+        status: mapBackendStatusToBatchStatus(resultData.status, resultData.isExpired),
+        timeline,
+      });
+      return;
+    }
+
+    // 2. Demo fallback if database is empty on preset keys
+    const stored = getStoredBatches();
+    const foundStored = stored.find(
+      (b) =>
+        b.id.toUpperCase() === trimmed ||
+        b.batchNumber.toUpperCase() === trimmed ||
+        (b.qrPayload && b.qrPayload.toUpperCase().includes(trimmed)),
+    );
+
+    if (foundStored) {
+      setDisplayResult({
+        id: foundStored.id,
+        product: foundStored.productName,
+        dosage: foundStored.dosage,
+        manufacturer: foundStored.manufacturerName,
+        mfgDate: foundStored.mfgDate,
+        expDate: foundStored.expDate,
+        status: foundStored.status,
+        timeline: foundStored.custodyTimeline,
+      });
+      return;
+    }
+
+    const foundMock = MOCK_BATCHES[trimmed];
+    if (foundMock) {
+      setDisplayResult(foundMock);
+    }
+  };
+
+  // Pre-fill and verify if batchId query param is provided
+  useEffect(() => {
+    const queryBatch = searchParams.get("batchId");
+    if (queryBatch && !batchInput) {
+      setBatchInput(queryBatch);
+      executeLookup(queryBatch);
+    }
+  }, [searchParams]);
+
+  const handleVerify = () => {
+    executeLookup(batchInput);
+  };
+
+  const handleScanSuccess = (decodedVal: string) => {
+    let cleanId = decodedVal.trim();
+    if (cleanId.startsWith("MEDTRACE:")) {
+      const parts = cleanId.split(":");
+      cleanId = parts[1] || cleanId;
+    }
+    setBatchInput(cleanId);
+    executeLookup(cleanId);
   };
 
   const handleReset = () => {
     setBatchInput("");
-    setState("idle");
-    setResult(null);
+    setDisplayResult(null);
+    reset();
   };
+
+  const isSearching = verifyState === "loading";
+  const isRateLimited = verifyState === "rate_limited";
+  const isNotFound = (verifyState === "not_found" || verifyState === "error") && !displayResult;
+  const isFound = Boolean(displayResult);
 
   return (
     <div style={{ minHeight: "80vh" }}>
@@ -273,7 +373,7 @@ export default function VerifyPage() {
             </div>
             <button
               onClick={handleVerify}
-              disabled={state === "loading"}
+              disabled={isSearching}
               className="mt-btn-primary"
               style={{
                 padding: "12px 22px",
@@ -281,28 +381,34 @@ export default function VerifyPage() {
                 fontWeight: 700,
                 fontSize: 15,
                 border: "none",
-                cursor: state === "loading" ? "wait" : "pointer",
-                opacity: state === "loading" ? 0.7 : 1,
+                cursor: isSearching ? "wait" : "pointer",
+                opacity: isSearching ? 0.7 : 1,
               }}
             >
               Verify
             </button>
           </div>
 
-          {/* QR scan hint */}
-          <div
-            className="mt-text-muted"
-            style={{
-              fontSize: 13,
-              marginTop: 14,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              gap: 6,
-            }}
-          >
-            <QrCode size={14} />
-            QR scanner coming soon — enter batch number for now
+          {/* QR scan button */}
+          <div style={{ marginTop: 14 }}>
+            <button
+              type="button"
+              onClick={() => setIsScannerOpen(true)}
+              className="mt-text-indigo"
+              style={{
+                background: "none",
+                border: "none",
+                fontSize: 13,
+                cursor: "pointer",
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 6,
+                fontWeight: 600,
+              }}
+            >
+              <QrCode size={16} />
+              <span>Scan medicine packaging QR code with camera</span>
+            </button>
           </div>
 
           {/* Demo hint */}
@@ -314,8 +420,7 @@ export default function VerifyPage() {
               color: "rgba(17,17,17,0.35)",
             }}
           >
-            Try: A19-0442 (authentic) · B22-1187 (expired) · C05-FAKE
-            (suspicious)
+            Try: A19-0442 (authentic) · B22-1187 (expired) · C05-FAKE (suspicious)
           </div>
         </div>
       </section>
@@ -323,7 +428,7 @@ export default function VerifyPage() {
       {/* Results Section */}
       <section style={{ padding: "0 24px 64px", maxWidth: 640, margin: "0 auto" }}>
         {/* Loading */}
-        {state === "loading" && (
+        {isSearching && (
           <div
             style={{
               textAlign: "center",
@@ -348,8 +453,61 @@ export default function VerifyPage() {
           </div>
         )}
 
-        {/* Not Found */}
-        {state === "not-found" && (
+        {/* Rate Limited (429) Friendly Card */}
+        {isRateLimited && (
+          <div
+            style={{
+              background: "rgba(245, 158, 11, 0.08)",
+              border: "1.5px solid rgba(245, 158, 11, 0.35)",
+              borderRadius: 20,
+              padding: "36px 28px",
+              textAlign: "center",
+            }}
+          >
+            <div
+              style={{
+                width: 52,
+                height: 52,
+                borderRadius: "50%",
+                background: "rgba(245, 158, 11, 0.18)",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                margin: "0 auto 16px",
+              }}
+            >
+              <Clock size={24} className="text-amber-600" />
+            </div>
+            <h2
+              className="mt-display"
+              style={{ fontSize: 22, fontWeight: 600, marginBottom: 8 }}
+            >
+              Verification Limit Reached
+            </h2>
+            <p
+              className="mt-text-muted"
+              style={{ fontSize: 14, lineHeight: 1.6, marginBottom: 20 }}
+            >
+              {errorMessage || `Too many verification checks. Please wait ${retryAfter ?? 30} seconds before trying again.`}
+            </p>
+            <button
+              onClick={handleVerify}
+              className="mt-btn-primary inline-flex items-center gap-1.5"
+              style={{
+                padding: "10px 22px",
+                borderRadius: 999,
+                fontWeight: 700,
+                fontSize: 14,
+              }}
+            >
+              <RefreshCw size={14} />
+              <span>Try Again</span>
+            </button>
+          </div>
+        )}
+
+        {/* Not Found Result Card */}
+        {isNotFound && (
           <div
             style={{
               background: "rgba(246,32,136,0.06)",
@@ -389,7 +547,7 @@ export default function VerifyPage() {
             </p>
             <div style={{ display: "flex", gap: 10, justifyContent: "center" }}>
               <a
-                href="/verify/report"
+                href={`/verify/report?batchId=${encodeURIComponent(batchInput.trim())}`}
                 className="mt-btn-primary inline-flex items-center"
                 style={{
                   padding: "10px 20px",
@@ -420,7 +578,7 @@ export default function VerifyPage() {
         )}
 
         {/* Found — Result Card */}
-        {state === "found" && result && (
+        {isFound && displayResult && (
           <div
             className="mt-seal-card"
             style={{
@@ -433,9 +591,9 @@ export default function VerifyPage() {
               style={{
                 padding: "24px 28px 20px",
                 background:
-                  result.status === "Valid"
+                  displayResult.status === "Valid"
                     ? "rgba(185,221,223,0.15)"
-                    : result.status === "Expired"
+                    : displayResult.status === "Expired"
                       ? "rgba(17,17,17,0.03)"
                       : "rgba(246,32,136,0.06)",
                 display: "flex",
@@ -454,13 +612,13 @@ export default function VerifyPage() {
                     marginBottom: 6,
                   }}
                 >
-                  BATCH #{result.id}
+                  BATCH #{displayResult.id}
                 </div>
                 <h2 style={{ fontSize: 20, fontWeight: 700, margin: 0 }}>
-                  {result.product} {result.dosage}
+                  {displayResult.product} {displayResult.dosage}
                 </h2>
               </div>
-              <StatusBadge status={result.status} patientFacing={true} />
+              <StatusBadge status={displayResult.status} patientFacing={true} />
             </div>
 
             <div className="mt-perforation" />
@@ -479,7 +637,7 @@ export default function VerifyPage() {
                     Manufacturer
                   </div>
                   <div style={{ fontSize: 14, fontWeight: 600 }}>
-                    {result.manufacturer}
+                    {displayResult.manufacturer}
                   </div>
                 </div>
                 <div>
@@ -490,7 +648,7 @@ export default function VerifyPage() {
                     Manufactured
                   </div>
                   <div className="mt-mono" style={{ fontSize: 13, fontWeight: 500 }}>
-                    {result.mfgDate}
+                    {displayResult.mfgDate}
                   </div>
                 </div>
                 <div>
@@ -501,7 +659,7 @@ export default function VerifyPage() {
                     Expires
                   </div>
                   <div className="mt-mono" style={{ fontSize: 13, fontWeight: 500 }}>
-                    {result.expDate}
+                    {displayResult.expDate}
                   </div>
                 </div>
                 <div>
@@ -512,13 +670,13 @@ export default function VerifyPage() {
                     Custody Transfers
                   </div>
                   <div className="mt-mono" style={{ fontSize: 13, fontWeight: 500 }}>
-                    {result.timeline.length} of {result.timeline.length}
+                    {displayResult.timeline.length} recorded
                   </div>
                 </div>
               </div>
 
               {/* Custody Timeline (simplified — no tx hashes, no jargon) */}
-              {result.timeline.length > 0 && (
+              {displayResult.timeline.length > 0 && (
                 <>
                   <div className="mt-perforation" style={{ marginBottom: 20 }} />
                   <div
@@ -533,7 +691,7 @@ export default function VerifyPage() {
                     Supply Chain Journey
                   </div>
                   <CustodyTimeline
-                    events={result.timeline}
+                    events={displayResult.timeline}
                     mode="simplified"
                   />
                 </>
@@ -541,7 +699,7 @@ export default function VerifyPage() {
 
               {/* Verification result banner */}
               <div style={{ marginTop: 24 }}>
-                {result.status === "Valid" && (
+                {displayResult.status === "Valid" && (
                   <div
                     className="flex items-center justify-center"
                     style={{
@@ -559,12 +717,12 @@ export default function VerifyPage() {
                   </div>
                 )}
 
-                {(result.status === "Expired" ||
-                  result.status === "Recalled" ||
-                  result.status === "Counterfeit") && (
+                {(displayResult.status === "Expired" ||
+                  displayResult.status === "Recalled" ||
+                  displayResult.status === "Counterfeit") && (
                   <div style={{ textAlign: "center" }}>
                     <a
-                      href="/verify/report"
+                      href={`/verify/report?batchId=${encodeURIComponent(displayResult.id)}`}
                       className="mt-btn-primary inline-flex items-center"
                       style={{
                         padding: "12px 24px",
@@ -608,6 +766,30 @@ export default function VerifyPage() {
           </div>
         )}
       </section>
+
+      {/* QR Scanner Camera Modal */}
+      <QRScannerModal
+        isOpen={isScannerOpen}
+        onClose={() => setIsScannerOpen(false)}
+        onScanSuccess={handleScanSuccess}
+        title="Scan Medicine Box"
+        subtitle="Align the QR code on the packaging within the viewfinder"
+        expectedType="batch"
+      />
     </div>
+  );
+}
+
+export default function VerifyPage() {
+  return (
+    <Suspense
+      fallback={
+        <div style={{ minHeight: "80vh", display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <div className="text-sm font-semibold text-gray-400">Loading verification service…</div>
+        </div>
+      }
+    >
+      <VerifyContent />
+    </Suspense>
   );
 }

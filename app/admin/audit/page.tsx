@@ -1,37 +1,19 @@
 "use client";
 
-import { Download } from "lucide-react";
+import React, { useState, useEffect, useCallback } from "react";
+import { Download, RefreshCw, AlertCircle, Search, Filter } from "lucide-react";
 import { COLORS } from "@/lib/constants";
 import DataTable, { type Column } from "@/components/shared/DataTable";
+import { auditApi } from "@/lib/api/audit";
+import { AuditLogEntryDto, OrgType } from "@/lib/api/types";
 
 /* ---------------------------------------------------------------
-   Admin — Audit Log
+   Admin — Audit Log (/admin/audit)
    
    Purpose: Regulatory audit trail — immutable event log
-   across all contract writes, with tx hash links, export CSV/PDF.
+   across all contract writes and state-changing actions.
+   Features: Real-time query, filters, and CSV export.
 ----------------------------------------------------------------*/
-
-interface AuditEntry {
-  timestamp: string;
-  action: string;
-  actor: string;
-  role: string;
-  target: string;
-  txHash: string;
-  block: number;
-  [key: string]: unknown;
-}
-
-const MOCK_AUDIT: AuditEntry[] = [
-  { timestamp: "2026-08-26 11:42", action: "createBatch", actor: "PharmaCorp India", role: "Manufacturer", target: "Batch #A19-0442", txHash: "0x8f4c…3e1a", block: 1492301 },
-  { timestamp: "2026-08-26 10:15", action: "transferCustody", actor: "PharmaCorp India", role: "Manufacturer", target: "Batch #A19-0442 → MedLogistics", txHash: "0xa2b1…7d4f", block: 1492288 },
-  { timestamp: "2026-08-25 16:30", action: "acceptCustody", actor: "MedLogistics Global", role: "Distributor", target: "Batch #A19-0442", txHash: "0x3c9e…1b2a", block: 1492200 },
-  { timestamp: "2026-08-25 09:10", action: "transferCustody", actor: "MedLogistics Global", role: "Distributor", target: "Batch #A19-0442 → HealthFirst", txHash: "0xd5f2…8c3b", block: 1492150 },
-  { timestamp: "2026-08-24 14:55", action: "acceptCustody", actor: "HealthFirst Pharmacy", role: "Pharmacy", target: "Batch #A19-0442", txHash: "0x7e1a…4d5c", block: 1492090 },
-  { timestamp: "2026-08-24 11:20", action: "dispenseMedicine", actor: "HealthFirst Pharmacy", role: "Pharmacy", target: "Batch #A19-0442 (OTC)", txHash: "0x9b3f…6e7d", block: 1492070 },
-  { timestamp: "2026-08-23 08:45", action: "grantRole", actor: "Admin", role: "Admin", target: "0x3c9e…1b2a → Pharmacy", txHash: "0x1c4a…9f8e", block: 1491980 },
-  { timestamp: "2026-08-22 15:00", action: "createBatch", actor: "GenMed Labs", role: "Manufacturer", target: "Batch #B22-1187", txHash: "0x5d2b…0a1c", block: 1491900 },
-];
 
 const ACTION_COLORS: Record<string, string> = {
   createBatch: "#0a5c5f",
@@ -40,124 +22,262 @@ const ACTION_COLORS: Record<string, string> = {
   dispenseMedicine: "#0a5c5f",
   grantRole: COLORS.magenta,
   revokeRole: COLORS.magenta,
+  issuePrescription: COLORS.indigo,
+  reportCounterfeit: COLORS.magenta,
 };
 
-const columns: Column<AuditEntry>[] = [
-  { key: "timestamp", label: "Time", sortable: true, width: "150px" },
-  {
-    key: "action",
-    label: "Action",
-    sortable: true,
-    render: (row) => (
-      <span
-        className="mt-mono"
-        style={{
-          fontSize: 12,
-          fontWeight: 600,
-          color: ACTION_COLORS[row.action] || COLORS.ink,
-          background: `${ACTION_COLORS[row.action] || COLORS.ink}15`,
-          padding: "3px 8px",
-          borderRadius: 6,
-        }}
-      >
-        {row.action}
-      </span>
-    ),
-  },
-  {
-    key: "actor",
-    label: "Actor",
-    sortable: true,
-    render: (row) => (
-      <div>
-        <div style={{ fontSize: 13, fontWeight: 600 }}>{row.actor}</div>
-        <div className="mt-text-muted" style={{ fontSize: 11 }}>{row.role}</div>
-      </div>
-    ),
-  },
-  { key: "target", label: "Target", sortable: true },
-  {
-    key: "txHash",
-    label: "Tx Hash",
-    render: (row) => (
-      <a
-        href="#"
-        className="mt-mono mt-text-indigo"
-        style={{
-          fontSize: 12,
-          fontWeight: 500,
-          textDecoration: "underline",
-        }}
-      >
-        {row.txHash}
-      </a>
-    ),
-  },
-  {
-    key: "block",
-    label: "Block",
-    sortable: true,
-    render: (row) => (
-      <span className="mt-mono mt-text-muted" style={{ fontSize: 12 }}>
-        {row.block}
-      </span>
-    ),
-  },
-];
-
 export default function AdminAuditPage() {
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const [logs, setLogs] = useState<AuditLogEntryDto[]>([]);
+  const [total, setTotal] = useState(0);
+  const [error, setError] = useState<string | null>(null);
+
+  // Filters
+  const [roleFilter, setRoleFilter] = useState<string>("");
+  const [statusFilter, setStatusFilter] = useState<string>("");
+
+  const loadLogs = useCallback(async () => {
+    try {
+      setError(null);
+      const res = await auditApi.getLogs({
+        actorRole: roleFilter ? (roleFilter as OrgType) : undefined,
+        status: statusFilter ? (statusFilter as "SUCCESS" | "FAILURE") : undefined,
+        limit: 100,
+      });
+      setLogs(res.data || []);
+      setTotal(res.total || 0);
+    } catch (err: any) {
+      console.error("Failed to load audit logs:", err);
+      setError(err?.message || "Failed to load audit trail.");
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, [roleFilter, statusFilter]);
+
+  useEffect(() => {
+    loadLogs();
+  }, [loadLogs]);
+
+  const handleExportCsv = async () => {
+    try {
+      setExporting(true);
+      const blob = await auditApi.exportCsv({
+        actorRole: roleFilter ? (roleFilter as OrgType) : undefined,
+        status: statusFilter ? (statusFilter as "SUCCESS" | "FAILURE") : undefined,
+      });
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `audit-log-${new Date().toISOString().slice(0, 10)}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error("Export CSV failed:", err);
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  const columns: Column<AuditLogEntryDto>[] = [
+    {
+      key: "createdAt",
+      label: "Time",
+      sortable: true,
+      width: "160px",
+      render: (row) => (
+        <span className="text-xs text-slate-600 font-medium">
+          {new Date(row.createdAt).toLocaleDateString("en-US", {
+            day: "2-digit",
+            month: "short",
+            year: "numeric",
+            hour: "2-digit",
+            minute: "2-digit",
+            second: "2-digit",
+          })}
+        </span>
+      ),
+    },
+    {
+      key: "action",
+      label: "Action",
+      sortable: true,
+      render: (row) => (
+        <span
+          className="mt-mono text-xs font-semibold px-2 py-0.5 rounded"
+          style={{
+            color: ACTION_COLORS[row.action] || COLORS.ink,
+            background: `${ACTION_COLORS[row.action] || COLORS.ink}15`,
+          }}
+        >
+          {row.action}
+        </span>
+      ),
+    },
+    {
+      key: "actorAddress",
+      label: "Actor & Role",
+      sortable: true,
+      render: (row) => (
+        <div>
+          <div className="mt-mono text-xs font-semibold text-slate-800">
+            {row.actorAddress ? `${row.actorAddress.slice(0, 8)}…${row.actorAddress.slice(-4)}` : "System"}
+          </div>
+          <div className="text-xs text-slate-500 font-medium">{row.actorRole || "Public / Anonymous"}</div>
+        </div>
+      ),
+    },
+    {
+      key: "targetResource",
+      label: "Target",
+      sortable: true,
+      render: (row) => (
+        <span className="text-xs text-slate-700">
+          <span className="font-semibold">{row.targetResource}</span>
+          {row.targetId && (
+            <span className="mt-mono text-slate-500 ml-1">
+              #{row.targetId.slice(0, 8)}
+            </span>
+          )}
+        </span>
+      ),
+    },
+    {
+      key: "status",
+      label: "Status",
+      sortable: true,
+      render: (row) => (
+        <span
+          className="text-xs font-bold px-2 py-0.5 rounded-full"
+          style={{
+            backgroundColor:
+              row.status === "SUCCESS" ? "rgba(185,221,223,0.4)" : "rgba(246,32,136,0.1)",
+            color: row.status === "SUCCESS" ? "#0a5c5f" : COLORS.magenta,
+          }}
+        >
+          {row.status}
+        </span>
+      ),
+    },
+    {
+      key: "ipAddress",
+      label: "IP Address",
+      render: (row) => (
+        <span className="mt-mono text-xs text-slate-400">
+          {row.ipAddress || "—"}
+        </span>
+      ),
+    },
+  ];
+
   return (
     <div style={{ maxWidth: 1180, margin: "0 auto", padding: "32px 24px" }}>
-      <div
-        className="flex items-center justify-between flex-wrap"
-        style={{ gap: 12, marginBottom: 28 }}
-      >
+      {/* Page header */}
+      <div className="flex items-center justify-between flex-wrap gap-4 mb-8">
         <div>
-          <h1 className="mt-display" style={{ fontSize: 24, fontWeight: 600 }}>
-            Audit Log
+          <h1 className="mt-display text-2xl font-bold text-slate-900">
+            Regulatory Audit Trail
           </h1>
-          <p className="mt-text-muted" style={{ fontSize: 14, marginTop: 4 }}>
-            Immutable record of all on-chain operations across the network.
+          <p className="text-sm text-slate-500 mt-1">
+            Immutable log of state-changing actions across the pharma network ({total} entries).
           </p>
         </div>
-        <div className="flex items-center" style={{ gap: 8 }}>
+
+        <div className="flex items-center gap-3">
           <button
-            className="mt-btn-secondary inline-flex items-center"
-            style={{
-              padding: "8px 16px",
-              borderRadius: 10,
-              fontSize: 13,
-              fontWeight: 700,
-              cursor: "pointer",
-              gap: 6,
-            }}
+            onClick={handleExportCsv}
+            disabled={exporting || logs.length === 0}
+            className="flex items-center gap-2 px-3.5 py-2 text-xs font-bold text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 rounded-xl transition-colors shadow-sm cursor-pointer disabled:opacity-50"
           >
-            <Download size={14} /> Export CSV
+            <Download size={14} />
+            <span>{exporting ? "Exporting…" : "Export CSV"}</span>
           </button>
+
           <button
-            className="mt-btn-secondary inline-flex items-center"
-            style={{
-              padding: "8px 16px",
-              borderRadius: 10,
-              fontSize: 13,
-              fontWeight: 700,
-              cursor: "pointer",
-              gap: 6,
+            onClick={() => {
+              setRefreshing(true);
+              loadLogs();
             }}
+            disabled={refreshing || loading}
+            className="p-2 text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-lg border border-slate-200 transition-colors"
+            title="Refresh logs"
           >
-            <Download size={14} /> Export PDF
+            <RefreshCw size={16} className={refreshing ? "animate-spin" : ""} />
           </button>
         </div>
       </div>
 
-      <DataTable
-        columns={columns}
-        data={MOCK_AUDIT}
-        searchPlaceholder="Search by action, actor, or target…"
-        searchKeys={["action", "actor", "target", "txHash"]}
-        emptyTitle="No audit entries"
-        emptyDescription="No on-chain events recorded yet."
-      />
+      {error && (
+        <div className="mb-6 p-4 rounded-xl bg-rose-50 border border-rose-200 flex items-center gap-3 text-sm text-rose-700">
+          <AlertCircle size={18} className="shrink-0" />
+          <span>{error}</span>
+        </div>
+      )}
+
+      {/* Filter Bar */}
+      <div className="flex items-center flex-wrap gap-4 mb-6 bg-white p-3.5 rounded-xl border border-slate-200 shadow-sm">
+        <div className="flex items-center gap-2 text-xs font-bold text-slate-500 uppercase tracking-wider">
+          <Filter size={14} />
+          Filters:
+        </div>
+
+        <select
+          value={roleFilter}
+          onChange={(e) => setRoleFilter(e.target.value)}
+          className="text-xs font-medium bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-slate-700 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+        >
+          <option value="">All Roles</option>
+          <option value="ADMIN">ADMIN</option>
+          <option value="MANUFACTURER">MANUFACTURER</option>
+          <option value="DISTRIBUTOR">DISTRIBUTOR</option>
+          <option value="PHARMACY">PHARMACY</option>
+          <option value="DOCTOR">DOCTOR</option>
+        </select>
+
+        <select
+          value={statusFilter}
+          onChange={(e) => setStatusFilter(e.target.value)}
+          className="text-xs font-medium bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-slate-700 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+        >
+          <option value="">All Statuses</option>
+          <option value="SUCCESS">SUCCESS</option>
+          <option value="FAILURE">FAILURE</option>
+        </select>
+
+        {(roleFilter || statusFilter) && (
+          <button
+            onClick={() => {
+              setRoleFilter("");
+              setStatusFilter("");
+            }}
+            className="text-xs text-indigo-600 hover:text-indigo-800 font-semibold cursor-pointer"
+          >
+            Clear Filters
+          </button>
+        )}
+      </div>
+
+      {loading ? (
+        <div className="flex items-center justify-center p-16 bg-white rounded-2xl border border-slate-100 shadow-sm">
+          <div className="flex flex-col items-center gap-3 text-slate-500">
+            <RefreshCw size={24} className="animate-spin text-indigo-600" />
+            <span className="text-sm font-medium">Loading audit events...</span>
+          </div>
+        </div>
+      ) : (
+        <DataTable
+          columns={columns}
+          data={logs}
+          searchPlaceholder="Search audit events by action, actor, target…"
+          searchKeys={["action", "actorAddress", "actorRole", "targetResource", "targetId"]}
+          emptyTitle="No Audit Records"
+          emptyDescription="No audit logs matched the specified query parameters."
+        />
+      )}
     </div>
   );
 }

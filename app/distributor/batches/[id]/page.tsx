@@ -19,11 +19,13 @@ import {
 import {
   getStoredBatches,
   saveStoredBatches,
-  generateTxHash,
 } from "@/lib/mockData";
 import { BatchRecord, CustodyEvent } from "@/lib/types";
-import { useTxState } from "@/context/TxStateContext";
 import { useWallet } from "@/context/WalletContext";
+import { useTxFlow } from "@/lib/hooks/useTxFlow";
+import { custodyApi, mapCustodyHistoryToEvents } from "@/lib/api/custody";
+import { batchesApi, mapApiBatchToRecord } from "@/lib/api/batches";
+import { parseCustodyError } from "@/lib/hooks/useCustody";
 import StatusBadge from "@/components/shared/StatusBadge";
 import CustodyTimeline from "@/components/shared/CustodyTimeline";
 import IPFSDocPreview from "@/components/shared/IPFSDocPreview";
@@ -37,18 +39,107 @@ export default function DistributorBatchDetailPage({
 }) {
   const resolvedParams = use(params);
   const { address, currentStakeholder } = useWallet();
-  const { executeTx } = useTxState();
 
   const [batch, setBatch] = useState<BatchRecord | null>(null);
+  const [timelineEvents, setTimelineEvents] = useState<CustodyEvent[]>([]);
   const [showQrModal, setShowQrModal] = useState(false);
+  const [inlineError, setInlineError] = useState<string | null>(null);
 
   useEffect(() => {
-    const batches = getStoredBatches();
-    const found = batches.find((b) => b.id === resolvedParams.id);
-    if (found) {
-      setBatch(found);
-    }
+    let isMounted = true;
+    const loadBatchAndHistory = async () => {
+      let currentRecord: BatchRecord | null = null;
+      try {
+        const apiBatch = await batchesApi.getBatchById(resolvedParams.id);
+        if (apiBatch && isMounted) {
+          currentRecord = mapApiBatchToRecord(apiBatch);
+          setBatch(currentRecord);
+        }
+      } catch {
+        // Fallback
+      }
+
+      if (!currentRecord) {
+        const batches = getStoredBatches();
+        const found = batches.find((b) => b.id === resolvedParams.id);
+        if (found && isMounted) {
+          currentRecord = found;
+          setBatch(found);
+          setTimelineEvents(found.custodyTimeline);
+        }
+      }
+
+      // Try fetching live custody history from backend
+      try {
+        const historyRes = await custodyApi.getCustodyHistory(resolvedParams.id);
+        if (historyRes && isMounted) {
+          const events = mapCustodyHistoryToEvents(historyRes, currentRecord?.mfgDate);
+          if (events.length > 0) {
+            setTimelineEvents(events);
+          }
+        }
+      } catch {
+        // Use timeline from batch
+      }
+    };
+
+    loadBatchAndHistory();
+    return () => {
+      isMounted = false;
+    };
   }, [resolvedParams.id]);
+
+  const txFlow = useTxFlow({
+    prepare: async () => {
+      setInlineError(null);
+      if (!batch) throw new Error("Batch not loaded");
+      try {
+        return await custodyApi.prepareAccept({ batchId: batch.id });
+      } catch (err: any) {
+        const parsed = parseCustodyError(err);
+        setInlineError(parsed.message);
+        throw err;
+      }
+    },
+    title: "Accept Custody on L2",
+    description: `Sealing on-chain receipt for batch ${batch?.id} on Arbitrum Sepolia...`,
+    onSuccess: ({ txHash }) => {
+      if (!batch) return;
+      const newCustodyEvent: CustodyEvent = {
+        id: `cust-${Date.now()}`,
+        timestamp: new Date().toISOString(),
+        stage: "ReceivedByDistributor",
+        actorRole: "Distributor",
+        actorName: currentStakeholder?.name || "SwiftLogistics Health",
+        actorAddress: address || "0x3A2...98b1",
+        txHash,
+        blockNumber: 0,
+        location: "Newark Logistics Hub Intake Bay",
+        notes: "Physical inspection complete. Custody accepted.",
+        temperatureVerified: true,
+      };
+
+      const updatedBatch: BatchRecord = {
+        ...batch,
+        status: "Valid",
+        currentCustodianRole: "Distributor",
+        currentCustodianName: currentStakeholder?.name || "SwiftLogistics Health",
+        currentCustodianAddress: address || "0x3A2...98b1",
+        custodyTimeline: [...batch.custodyTimeline, newCustodyEvent],
+      };
+
+      const all = getStoredBatches();
+      const updated = all.map((b) => (b.id === batch.id ? updatedBatch : b));
+      saveStoredBatches(updated);
+      setBatch(updatedBatch);
+      setTimelineEvents((prev) => [...prev, newCustodyEvent]);
+      window.dispatchEvent(new Event("medtrace_data_updated"));
+    },
+    onError: (err: any) => {
+      const parsed = parseCustodyError(err);
+      setInlineError(parsed.message);
+    },
+  });
 
   if (!batch) {
     return (
@@ -60,46 +151,12 @@ export default function DistributorBatchDetailPage({
 
   const isPendingDistributor =
     batch.currentCustodianRole === "Distributor" &&
-    batch.status === "PendingAcceptance";
+    (batch.status === "PendingAcceptance" || batch.status === "InTransit");
   const isHeldByDistributor =
     batch.currentCustodianRole === "Distributor" && batch.status === "Valid";
 
   const handleAcceptCustody = async () => {
-    const acceptTx = generateTxHash();
-
-    const newCustodyEvent: CustodyEvent = {
-      id: `cust-${Date.now()}`,
-      timestamp: new Date().toISOString(),
-      stage: "ReceivedByDistributor",
-      actorRole: "Distributor",
-      actorName: currentStakeholder?.name || "SwiftLogistics Health",
-      actorAddress: address || "0x3A2...98b1",
-      txHash: acceptTx,
-      blockNumber: 1998500,
-      location: "Newark Logistics Hub Intake Bay",
-      notes: "Physical inspection complete. Custody accepted.",
-      temperatureVerified: true,
-    };
-
-    const updatedBatch: BatchRecord = {
-      ...batch,
-      status: "Valid",
-      currentCustodianRole: "Distributor",
-      currentCustodianName: currentStakeholder?.name || "SwiftLogistics Health",
-      currentCustodianAddress: address || "0x3A2...98b1",
-      custodyTimeline: [...batch.custodyTimeline, newCustodyEvent],
-    };
-
-    await executeTx({
-      title: "Accept Custody",
-      description: `Sealing on-chain receipt for batch ${batch.id}...`,
-      onCommit: () => {
-        const all = getStoredBatches();
-        const updated = all.map((b) => (b.id === batch.id ? updatedBatch : b));
-        saveStoredBatches(updated);
-        setBatch(updatedBatch);
-      },
-    });
+    await txFlow.execute();
   };
 
   return (
@@ -125,11 +182,14 @@ export default function DistributorBatchDetailPage({
           {isPendingDistributor && (
             <button
               onClick={handleAcceptCustody}
-              className="px-4 py-1.5 rounded-xl font-bold text-xs text-white shadow-sm transition-all hover:scale-105 flex items-center gap-1.5"
+              disabled={txFlow.isProcessing}
+              className={`px-4 py-1.5 rounded-xl font-bold text-xs text-white shadow-sm transition-all flex items-center gap-1.5 ${
+                txFlow.isProcessing ? 'opacity-70 cursor-not-allowed' : 'hover:scale-105'
+              }`}
               style={{ backgroundColor: "#0284C7" }}
             >
               <CheckCircle2 size={13} />
-              <span>Accept Custody</span>
+              <span>{txFlow.isProcessing ? "Accepting..." : "Accept Custody"}</span>
             </button>
           )}
 
@@ -153,6 +213,13 @@ export default function DistributorBatchDetailPage({
             title={`${batch.productName} (${batch.id})`}
             subtitle="Scannable packaging QR label"
           />
+        </div>
+      )}
+
+      {inlineError && (
+        <div className="p-4 bg-rose-50 border border-rose-200 rounded-2xl text-xs text-rose-800">
+          <span className="font-bold">Custody Action Blocked: </span>
+          <span>{inlineError}</span>
         </div>
       )}
 
@@ -256,11 +323,14 @@ export default function DistributorBatchDetailPage({
               Custody Provenance (Internal Trail)
             </h2>
             <span className="text-xs font-bold text-sky-700 bg-sky-50 px-2.5 py-1 rounded-full border border-sky-200">
-              {batch.custodyTimeline.length} Transfers
+              {(timelineEvents.length > 0 ? timelineEvents : batch.custodyTimeline).length} Transfers
             </span>
           </div>
 
-          <CustodyTimeline events={batch.custodyTimeline} mode="full" />
+          <CustodyTimeline
+            events={timelineEvents.length > 0 ? timelineEvents : batch.custodyTimeline}
+            mode="full"
+          />
         </div>
 
         <div className="space-y-6">

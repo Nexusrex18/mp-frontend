@@ -19,10 +19,13 @@ import { COLORS } from "@/lib/constants";
    Patient-facing copy: "Authentic" not "Valid", "Suspicious" not "Counterfeit".
 ----------------------------------------------------------------*/
 
-interface StatusBadgeProps {
+export type { BatchStatus };
+
+export interface StatusBadgeProps {
   status: BatchStatus | string;
   /** Use patient-friendly labels (default: true) */
   patientFacing?: boolean;
+  size?: "sm" | "md" | "lg";
 }
 
 const CONFIG: Record<
@@ -90,6 +93,7 @@ const CONFIG: Record<
 export default function StatusBadge({
   status,
   patientFacing = true,
+  size = "md",
 }: StatusBadgeProps) {
   const cfg = CONFIG[status] || {
     icon: Clock,
@@ -102,20 +106,26 @@ export default function StatusBadge({
   const Icon = cfg.icon;
   const displayLabel = patientFacing ? cfg.patientLabel : cfg.label;
 
+  const sizeStyles = {
+    sm: { padding: "3px 10px", fontSize: 12, gap: 4, iconSize: 13 },
+    md: { padding: "6px 14px", fontSize: 14, gap: 6, iconSize: 16 },
+    lg: { padding: "8px 18px", fontSize: 16, gap: 8, iconSize: 18 },
+  }[size] || { padding: "6px 14px", fontSize: 14, gap: 6, iconSize: 16 };
+
   return (
     <div
       className="inline-flex items-center"
       style={{
         backgroundColor: cfg.bg,
         color: cfg.color,
-        padding: "6px 14px",
+        padding: sizeStyles.padding,
         borderRadius: 999,
         fontWeight: 700,
-        fontSize: 14,
-        gap: 6,
+        fontSize: sizeStyles.fontSize,
+        gap: sizeStyles.gap,
       }}
     >
-      <Icon size={16} />
+      <Icon size={sizeStyles.iconSize} />
       {displayLabel}
     </div>
   );

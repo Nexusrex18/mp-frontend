@@ -22,11 +22,13 @@ import {
   getStoredBatches,
   saveStoredBatches,
   DEMO_STAKEHOLDERS,
-  generateTxHash,
 } from "@/lib/mockData";
 import { BatchRecord, CustodyEvent } from "@/lib/types";
-import { useTxState } from "@/context/TxStateContext";
 import { useWallet } from "@/context/WalletContext";
+import { useTxFlow } from "@/lib/hooks/useTxFlow";
+import { custodyApi } from "@/lib/api/custody";
+import { batchesApi, mapApiBatchToRecord } from "@/lib/api/batches";
+import { parseCustodyError } from "@/lib/hooks/useCustody";
 import { COLORS } from "@/lib/constants";
 
 export default function ManufacturerTransferPage({
@@ -37,27 +39,108 @@ export default function ManufacturerTransferPage({
   const resolvedParams = use(params);
   const router = useRouter();
   const { address, currentStakeholder } = useWallet();
-  const { executeTx } = useTxState();
 
   const [batch, setBatch] = useState<BatchRecord | null>(null);
   const [selectedDistributorId, setSelectedDistributorId] = useState("stk-2");
+  const [customWallet, setCustomWallet] = useState("0x70997970C51812dc3A010C7d01b50e0d17dc79C8");
   const [carrierRef, setCarrierRef] = useState("DHL ColdChain Express #TL-882");
   const [notes, setNotes] = useState(
     "Dispatched in temperature-controlled crate (4.2°C). Seal #SL-9941."
   );
   const [tempChecked, setTempChecked] = useState(true);
+  const [inlineError, setInlineError] = useState<string | null>(null);
 
   const distributors = DEMO_STAKEHOLDERS.filter(
     (s) => s.role === "DISTRIBUTOR_ROLE"
   );
 
   useEffect(() => {
-    const batches = getStoredBatches();
-    const found = batches.find((b) => b.id === resolvedParams.id);
-    if (found) {
-      setBatch(found);
-    }
+    let isMounted = true;
+    const loadBatch = async () => {
+      try {
+        const apiBatch = await batchesApi.getBatchById(resolvedParams.id);
+        if (apiBatch && isMounted) {
+          setBatch(mapApiBatchToRecord(apiBatch));
+          return;
+        }
+      } catch {
+        // Fallback
+      }
+
+      const batches = getStoredBatches();
+      const found = batches.find((b) => b.id === resolvedParams.id);
+      if (found && isMounted) {
+        setBatch(found);
+      }
+    };
+
+    loadBatch();
+    return () => {
+      isMounted = false;
+    };
   }, [resolvedParams.id]);
+
+  const selectedDistributor =
+    distributors.find((d) => d.id === selectedDistributorId) || distributors[0];
+
+  const txFlow = useTxFlow({
+    prepare: async () => {
+      setInlineError(null);
+      if (!batch) throw new Error("Batch not loaded");
+      const targetAddress = customWallet.trim() || selectedDistributor.address;
+      try {
+        return await custodyApi.prepareTransfer({
+          batchId: batch.id,
+          toWalletAddress: targetAddress,
+        });
+      } catch (err: any) {
+        const parsed = parseCustodyError(err);
+        setInlineError(parsed.message);
+        throw err;
+      }
+    },
+    title: "Initiate Custody Transfer",
+    description: `Transferring custody of ${batch?.id || 'batch'} to ${selectedDistributor.name} on L2...`,
+    onSuccess: ({ txHash }) => {
+      if (!batch) return;
+      const targetAddress = customWallet.trim() || selectedDistributor.address;
+      const newCustodyEvent: CustodyEvent = {
+        id: `cust-${Date.now()}`,
+        timestamp: new Date().toISOString(),
+        stage: "TransferredToDistributor",
+        actorRole: "Manufacturer",
+        actorName: currentStakeholder?.name || "Apex BioPharma Inc.",
+        actorAddress: address || "0x71C...4F9a",
+        toActorName: selectedDistributor.name,
+        toActorAddress: targetAddress,
+        txHash,
+        blockNumber: 0,
+        location: "Bridgewater Shipping Bay 2",
+        notes: `${carrierRef} — ${notes}`,
+        temperatureVerified: tempChecked,
+      };
+
+      const updatedBatch: BatchRecord = {
+        ...batch,
+        status: "InTransit",
+        currentCustodianRole: "Distributor",
+        currentCustodianName: selectedDistributor.name,
+        currentCustodianAddress: targetAddress,
+        custodyTimeline: [...batch.custodyTimeline, newCustodyEvent],
+      };
+
+      const batches = getStoredBatches();
+      const updated = batches.map((b) => (b.id === batch.id ? updatedBatch : b));
+      saveStoredBatches(updated);
+      window.dispatchEvent(new Event("medtrace_data_updated"));
+
+      router.push(`/manufacturer/batches/${batch.id}`);
+    },
+    onError: (err: any) => {
+      const parsed = parseCustodyError(err);
+      setInlineError(parsed.message);
+    },
+  });
 
   if (!batch) {
     return (
@@ -67,50 +150,9 @@ export default function ManufacturerTransferPage({
     );
   }
 
-  const selectedDistributor =
-    distributors.find((d) => d.id === selectedDistributorId) || distributors[0];
-
   const handleConfirmTransfer = async (e: React.FormEvent) => {
     e.preventDefault();
-    const transferTx = generateTxHash();
-
-    const newCustodyEvent: CustodyEvent = {
-      id: `cust-${Date.now()}`,
-      timestamp: new Date().toISOString(),
-      stage: "TransferredToDistributor",
-      actorRole: "Manufacturer",
-      actorName: currentStakeholder?.name || "Apex BioPharma Inc.",
-      actorAddress: address || "0x71C...4F9a",
-      toActorName: selectedDistributor.name,
-      toActorAddress: selectedDistributor.address,
-      txHash: transferTx,
-      blockNumber: 1996200,
-      location: "Bridgewater Shipping Bay 2",
-      notes: `${carrierRef} — ${notes}`,
-      temperatureVerified: tempChecked,
-    };
-
-    const updatedBatch: BatchRecord = {
-      ...batch,
-      status: "PendingAcceptance",
-      currentCustodianRole: "Distributor",
-      currentCustodianName: selectedDistributor.name,
-      currentCustodianAddress: selectedDistributor.address,
-      custodyTimeline: [...batch.custodyTimeline, newCustodyEvent],
-    };
-
-    const success = await executeTx({
-      title: "Initiate Custody Transfer",
-      description: `Transferring custody of ${batch.id} to ${selectedDistributor.name} on L2...`,
-      onCommit: () => {
-        const batches = getStoredBatches();
-        const updated = batches.map((b) =>
-          b.id === batch.id ? updatedBatch : b
-        );
-        saveStoredBatches(updated);
-        router.push(`/manufacturer/batches/${batch.id}`);
-      },
-    });
+    await txFlow.execute();
   };
 
   return (
@@ -193,6 +235,23 @@ export default function ManufacturerTransferPage({
 
           <div>
             <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1.5">
+              Distributor Node Wallet Address (Arbitrum Sepolia):
+            </label>
+            <input
+              type="text"
+              required
+              value={customWallet}
+              onChange={(e) => setCustomWallet(e.target.value)}
+              placeholder="0x..."
+              className="w-full px-4 py-2.5 rounded-xl border border-gray-200 text-xs font-mono focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+            />
+            <p className="text-[11px] text-gray-400 mt-1">
+              Must be registered with DISTRIBUTOR_ROLE on AccessControl smart contract.
+            </p>
+          </div>
+
+          <div>
+            <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1.5">
               Logistics Carrier & Tracking ID:
             </label>
             <input
@@ -230,16 +289,30 @@ export default function ManufacturerTransferPage({
             </span>
           </label>
 
+          {inlineError && (
+            <div className="p-3.5 bg-rose-50 border border-rose-200 rounded-2xl text-xs text-rose-800 flex items-start gap-2">
+              <span className="font-bold">Transfer Blocked:</span>
+              <span>{inlineError}</span>
+            </div>
+          )}
+
           <button
             type="submit"
-            className="w-full py-3.5 px-6 rounded-2xl font-extrabold text-sm text-white shadow-lg transition-all hover:scale-105 active:scale-95 flex items-center justify-center gap-2"
+            disabled={txFlow.isProcessing}
+            className={`w-full py-3.5 px-6 rounded-2xl font-extrabold text-sm text-white shadow-lg transition-all flex items-center justify-center gap-2 ${
+              txFlow.isProcessing ? 'opacity-70 cursor-not-allowed' : 'hover:scale-105 active:scale-95'
+            }`}
             style={{
               backgroundColor: COLORS.magenta,
               boxShadow: "0 6px 20px rgba(246, 32, 136, 0.35)",
             }}
           >
             <Send size={16} />
-            <span>Sign & Dispatch Custody on L2</span>
+            <span>
+              {txFlow.isProcessing
+                ? "Signing & Confirming on L2..."
+                : "Sign & Dispatch Custody on L2"}
+            </span>
           </button>
         </form>
       </div>

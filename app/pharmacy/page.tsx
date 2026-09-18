@@ -19,38 +19,97 @@ import {
   Sparkles,
   Zap,
 } from "lucide-react";
-import {
-  getStoredBatches,
-  getStoredDispensings,
-} from "@/lib/mockData";
+import { getStoredBatches, getStoredDispensings } from "@/lib/mockData";
 import { BatchRecord, DispensingRecord } from "@/lib/types";
+import { useWallet } from "@/context/WalletContext";
+import { batchesApi, mapApiBatchToRecord } from "@/lib/api/batches";
+import { custodyApi } from "@/lib/api/custody";
+import { dispensingApi } from "@/lib/api/dispensing";
 import StatusBadge from "@/components/shared/StatusBadge";
 import { COLORS } from "@/lib/constants";
 
 export default function PharmacyDashboard() {
+  const { address, currentStakeholder } = useWallet();
   const [batches, setBatches] = useState<BatchRecord[]>([]);
+  const [incomingCount, setIncomingCount] = useState<number>(0);
   const [dispensings, setDispensings] = useState<DispensingRecord[]>([]);
 
   useEffect(() => {
-    setBatches(getStoredBatches());
-    setDispensings(getStoredDispensings());
-    const handleUpdate = () => {
-      setBatches(getStoredBatches());
-      setDispensings(getStoredDispensings());
-    };
+    let isMounted = true;
+
+    async function loadData() {
+      const orgId = currentStakeholder?.organization || address || undefined;
+
+      // 1. Fetch batches held by pharmacy
+      try {
+        const batchRes = await batchesApi.listBatches({ custodian: orgId, limit: 50 });
+        if (isMounted && batchRes?.data && batchRes.data.length > 0) {
+          setBatches(batchRes.data.map(mapApiBatchToRecord));
+        } else if (isMounted) {
+          setBatches(getStoredBatches());
+        }
+      } catch {
+        if (isMounted) setBatches(getStoredBatches());
+      }
+
+      // 2. Fetch incoming transfers
+      try {
+        const incomingRes = await custodyApi.getIncoming(orgId);
+        if (isMounted && incomingRes) {
+          const count = incomingRes.total ?? incomingRes.data?.length ?? 0;
+          setIncomingCount(count);
+        }
+      } catch {
+        // Fallback
+        const mockPending = getStoredBatches().filter(
+          (b) => b.currentCustodianRole === "Pharmacy" && b.status === "PendingAcceptance"
+        ).length;
+        if (isMounted) setIncomingCount(mockPending);
+      }
+
+      // 3. Fetch dispensing history
+      try {
+        const dispRes = await dispensingApi.getHistory({ org: orgId, limit: 10 });
+        if (isMounted && dispRes?.data && dispRes.data.length > 0) {
+          const mapped: DispensingRecord[] = dispRes.data.map((item) => ({
+            id: item.id,
+            timestamp: item.createdAt,
+            batchId: item.batchId,
+            batchNumber: item.batch?.batchChainId ? `LOT-${item.batch.batchChainId}` : item.batch?.id || item.batchId.slice(0, 10),
+            productName: item.batch?.product?.name || "Pharmaceutical Product",
+            dispensingType: item.dispensingType === "OTC" ? "OTC" : "Prescription",
+            quantityDispensed: item.quantity,
+            pharmacyName: item.pharmacyOrg?.name || currentStakeholder?.name || "Licensed Pharmacy",
+            pharmacyAddress: item.pharmacyOrgId || address || "0x...",
+            pharmacistName: "Staff Pharmacist",
+            txHash: item.txHash,
+            status: "Confirmed",
+            prescriptionHash: item.prescription?.prescriptionHash,
+            patientIdentifier: item.prescription?.patientRef,
+          }));
+          setDispensings(mapped);
+        } else if (isMounted) {
+          setDispensings(getStoredDispensings());
+        }
+      } catch {
+        if (isMounted) setDispensings(getStoredDispensings());
+      }
+    }
+
+    loadData();
+
+    const handleUpdate = () => loadData();
     window.addEventListener("medtrace_data_updated", handleUpdate);
-    return () => window.removeEventListener("medtrace_data_updated", handleUpdate);
-  }, []);
+    return () => {
+      isMounted = false;
+      window.removeEventListener("medtrace_data_updated", handleUpdate);
+    };
+  }, [currentStakeholder, address]);
 
   const pharmacyStock = batches.filter(
-    (b) => b.currentCustodianRole === "Pharmacy" && b.status === "Valid"
+    (b) => b.status === "Valid" || b.status === "InTransit"
   );
-  const pendingIncoming = batches.filter(
-    (b) =>
-      b.currentCustodianRole === "Pharmacy" &&
-      b.status === "PendingAcceptance"
-  );
-  const lowStockBatches = pharmacyStock.filter((b) => b.quantity < 500);
+  const totalUnits = batches.reduce((acc, b) => acc + (b.quantity || 0), 0);
 
   return (
     <div className="space-y-8">
@@ -63,7 +122,7 @@ export default function PharmacyDashboard() {
               <span>Licensed Dispensary Portal</span>
             </div>
             <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight">
-              CityCare Central Pharmacy
+              {currentStakeholder?.name || "CityCare Central Pharmacy"}
             </h1>
             <p className="mt-2 text-xs sm:text-sm text-emerald-200 leading-relaxed">
               Verify medicine packaging QRs, auto-detect dispensing rules (OTC vs Doctor Prescription), and cryptographically record patient handoffs on L2.
@@ -88,7 +147,7 @@ export default function PharmacyDashboard() {
               className="px-5 py-4 rounded-2xl font-bold text-sm bg-white/10 hover:bg-white/20 text-white border border-white/20 transition-colors flex items-center justify-center gap-2"
             >
               <Package size={17} />
-              <span>Inventory ({pharmacyStock.length})</span>
+              <span>Inventory ({batches.length})</span>
             </Link>
           </div>
         </div>
@@ -105,7 +164,7 @@ export default function PharmacyDashboard() {
           </div>
           <div>
             <div className="text-2xl font-extrabold text-gray-900">
-              {pharmacyStock.reduce((acc, b) => acc + b.quantity, 0)}
+              {totalUnits}
             </div>
             <div className="text-xs text-gray-500 font-semibold">
               Total Units in Stock
@@ -119,7 +178,7 @@ export default function PharmacyDashboard() {
           </div>
           <div>
             <div className="text-2xl font-extrabold text-gray-900">
-              {pendingIncoming.length}
+              {incomingCount}
             </div>
             <div className="text-xs text-gray-500 font-semibold">
               Incoming Deliveries
@@ -147,7 +206,7 @@ export default function PharmacyDashboard() {
           </div>
           <div>
             <div className="text-2xl font-extrabold text-gray-900">
-              {pharmacyStock.length}
+              {batches.length}
             </div>
             <div className="text-xs text-gray-500 font-semibold">
               Active Batches Held
@@ -157,7 +216,7 @@ export default function PharmacyDashboard() {
       </div>
 
       {/* Incoming Deliveries Alert */}
-      {pendingIncoming.length > 0 && (
+      {incomingCount > 0 && (
         <div className="bg-amber-50 rounded-3xl p-6 border border-amber-200 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-2xl bg-amber-100 text-amber-800 flex items-center justify-center shrink-0">
@@ -165,7 +224,7 @@ export default function PharmacyDashboard() {
             </div>
             <div>
               <h2 className="text-sm font-bold text-amber-950">
-                {pendingIncoming.length} Shipment(s) Dispatched by Distributors Awaiting Intake
+                {incomingCount} Shipment(s) Dispatched by Distributors Awaiting Intake
               </h2>
               <p className="text-xs text-amber-800 mt-0.5">
                 Verify and accept incoming shipments into dispensary stock
@@ -236,7 +295,7 @@ export default function PharmacyDashboard() {
                     </span>
                   </div>
                   <div className="text-gray-500 font-mono text-[11px] mt-0.5">
-                    Batch: {disp.batchId} • Qty: {disp.quantityDispensed} • Pharmacist: {disp.pharmacistName}
+                    Batch: {disp.batchId.slice(0, 10)}... • Qty: {disp.quantityDispensed} • Pharmacist: {disp.pharmacistName}
                   </div>
                 </div>
               </div>

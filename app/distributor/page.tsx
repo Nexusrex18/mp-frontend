@@ -18,8 +18,10 @@ import {
   Sparkles,
   Building2,
 } from "lucide-react";
-import { getStoredBatches, saveStoredBatches } from "@/lib/mockData";
+import { getStoredBatches } from "@/lib/mockData";
 import { BatchRecord } from "@/lib/types";
+import { batchesApi, mapApiBatchToRecord } from "@/lib/api/batches";
+import { custodyApi } from "@/lib/api/custody";
 import StatusBadge from "@/components/shared/StatusBadge";
 import { COLORS } from "@/lib/constants";
 
@@ -27,8 +29,40 @@ export default function DistributorDashboard() {
   const [batches, setBatches] = useState<BatchRecord[]>([]);
 
   useEffect(() => {
-    setBatches(getStoredBatches());
-    const handleUpdate = () => setBatches(getStoredBatches());
+    const loadData = async () => {
+      try {
+        const [batchesRes, incomingRes] = await Promise.allSettled([
+          batchesApi.listBatches(),
+          custodyApi.getIncoming(),
+        ]);
+
+        const apiBatches =
+          batchesRes.status === "fulfilled" && batchesRes.value?.data
+            ? batchesRes.value.data.map(mapApiBatchToRecord)
+            : [];
+
+        // Map incoming transfers to PendingAcceptance records if in transit
+        const incomingItems =
+          incomingRes.status === "fulfilled" && incomingRes.value?.incoming
+            ? incomingRes.value.incoming.map((item) => ({
+                ...mapApiBatchToRecord(item.batch as any),
+                status: "PendingAcceptance" as const,
+                currentCustodianRole: "Distributor" as const,
+                currentCustodianName: item.toOrg?.name || "Distributor Node",
+              }))
+            : [];
+
+        const stored = getStoredBatches();
+        const existingIds = new Set([...apiBatches.map((b) => b.id), ...incomingItems.map((b) => b.id)]);
+        const merged = [...incomingItems, ...apiBatches, ...stored.filter((b) => !existingIds.has(b.id))];
+        setBatches(merged);
+      } catch {
+        setBatches(getStoredBatches());
+      }
+    };
+
+    loadData();
+    const handleUpdate = () => loadData();
     window.addEventListener("medtrace_data_updated", handleUpdate);
     return () => window.removeEventListener("medtrace_data_updated", handleUpdate);
   }, []);

@@ -1,13 +1,7 @@
 "use client";
 
-/* ---------------------------------------------------------------
-   MedTrace — Role Context & On-Chain Role Resolution
-   Simulates AccessControl.sol getRole(address) lookup and routes
-   internal users dynamically to their authorized dashboards.
-----------------------------------------------------------------*/
-
 import React, { createContext, useContext, ReactNode } from "react";
-import { useWallet } from "./WalletContext";
+import { useAuth } from "./AuthContext";
 import { Role, RoleName } from "@/lib/types";
 
 interface RoleContextType {
@@ -21,41 +15,15 @@ interface RoleContextType {
 const RoleContext = createContext<RoleContextType | undefined>(undefined);
 
 export function RoleProvider({ children }: { children: ReactNode }) {
-  const { isConnected, currentStakeholder } = useWallet();
-
-  const role: Role = isConnected && currentStakeholder ? currentStakeholder.role : "UNREGISTERED";
-  const roleName: RoleName = isConnected && currentStakeholder ? currentStakeholder.roleName : "Unregistered";
-  const isAuthorized = role !== "UNREGISTERED";
-
-  const getDashboardPath = (userRole: Role): string => {
-    switch (userRole) {
-      case "MANUFACTURER_ROLE":
-        return "/manufacturer";
-      case "DISTRIBUTOR_ROLE":
-        return "/distributor";
-      case "PHARMACY_ROLE":
-        return "/pharmacy";
-      case "DOCTOR_ROLE":
-        return "/doctor";
-      case "ADMIN_ROLE":
-        return "/admin";
-      case "UNREGISTERED":
-      default:
-        return "/unauthorized";
-    }
-  };
-
-  const hasRole = (requiredRole: Role): boolean => {
-    return role === requiredRole;
-  };
+  const { role, roleName, isRegistered, dashboardPath, hasRole } = useAuth();
 
   return (
     <RoleContext.Provider
       value={{
         role,
         roleName,
-        isAuthorized,
-        dashboardPath: getDashboardPath(role),
+        isAuthorized: isRegistered,
+        dashboardPath,
         hasRole,
       }}
     >

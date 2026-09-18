@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { COLORS } from "@/lib/constants";
 import { getStoredBatches, getStoredPrescriptions } from "@/lib/mockData";
+import { qrApi } from "@/lib/api/qr";
 
 interface QRScannerModalProps {
   isOpen: boolean;
@@ -76,8 +77,14 @@ export default function QRScannerModal({
 
   if (!isOpen) return null;
 
-  const handleSelectValue = (val: string) => {
-    onScanSuccess(val);
+  const handleSelectValue = async (val: string) => {
+    try {
+      const decoded = await qrApi.decodeQr(val);
+      const targetId = decoded.batchId || decoded.targetId || decoded.prescriptionId || val;
+      onScanSuccess(targetId);
+    } catch {
+      onScanSuccess(val);
+    }
     onClose();
   };
 

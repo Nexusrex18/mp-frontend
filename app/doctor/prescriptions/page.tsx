@@ -18,13 +18,31 @@ import { getStoredPrescriptions } from "@/lib/mockData";
 import { PrescriptionRecord } from "@/lib/types";
 import DataTable, { Column } from "@/components/shared/DataTable";
 import { COLORS } from "@/lib/constants";
+import { prescriptionsApi, mapApiPrescriptionToRecord } from "@/lib/api/prescriptions";
 
 export default function DoctorPrescriptionsPage() {
   const [prescriptions, setPrescriptions] = useState<PrescriptionRecord[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  const loadData = async () => {
+    setLoading(true);
+    try {
+      const res = await prescriptionsApi.list();
+      const items = res.data || res.prescriptions || [];
+      const apiMapped = items.map(mapApiPrescriptionToRecord);
+      const stored = getStoredPrescriptions();
+      const apiIds = new Set(apiMapped.map((p) => p.id));
+      setPrescriptions([...apiMapped, ...stored.filter((p) => !apiIds.has(p.id))]);
+    } catch {
+      setPrescriptions(getStoredPrescriptions());
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
-    setPrescriptions(getStoredPrescriptions());
-    const handleUpdate = () => setPrescriptions(getStoredPrescriptions());
+    loadData();
+    const handleUpdate = () => loadData();
     window.addEventListener("medtrace_data_updated", handleUpdate);
     return () => window.removeEventListener("medtrace_data_updated", handleUpdate);
   }, []);

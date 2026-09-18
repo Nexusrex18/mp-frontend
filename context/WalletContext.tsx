@@ -1,178 +1,285 @@
 "use client";
 
-/* ---------------------------------------------------------------
-   MedTrace — Wallet Context & Web3 State
-   Manages wallet connection, address state, network status,
-   and demo persona switching for instantaneous testing.
-----------------------------------------------------------------*/
-
-import React, { createContext, useContext, useState, useEffect, ReactNode } from "react";
+import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode } from "react";
+import { ethers } from "ethers";
+import { Role, StakeholderProfile } from "@/lib/types";
 import { DEMO_STAKEHOLDERS } from "@/lib/mockData";
-import { StakeholderProfile, Role } from "@/lib/types";
 
 export interface NetworkConfig {
-  chainId: string;
+  chainId: number;
+  hexChainId: string;
   name: string;
-  isSupported: boolean;
   rpcUrl: string;
   blockExplorer: string;
 }
 
+const TARGET_CHAIN_ID = parseInt(process.env.NEXT_PUBLIC_CHAIN_ID || "84532", 10);
+const TARGET_RPC_URL = process.env.NEXT_PUBLIC_RPC_URL || "https://sepolia.base.org";
+const TARGET_EXPLORER = process.env.NEXT_PUBLIC_EXPLORER_BASE_URL || "https://sepolia.basescan.org";
+
 export const SUPPORTED_NETWORK: NetworkConfig = {
-  chainId: "0x66eee", // 421614 = Arbitrum Sepolia
-  name: "Arbitrum Sepolia L2",
-  isSupported: true,
-  rpcUrl: "https://sepolia-rollup.arbitrum.io/rpc",
-  blockExplorer: "https://sepolia.arbiscan.io",
+  chainId: TARGET_CHAIN_ID,
+  hexChainId: `0x${TARGET_CHAIN_ID.toString(16)}`,
+  name: TARGET_CHAIN_ID === 84532 ? "Base Sepolia L2" : "Arbitrum Sepolia L2",
+  rpcUrl: TARGET_RPC_URL,
+  blockExplorer: TARGET_EXPLORER,
 };
 
 interface WalletContextType {
   isConnected: boolean;
+  isConnecting: boolean;
   address: string | null;
   currentStakeholder: StakeholderProfile | null;
+  chainId: number | null;
+  signer: ethers.Signer | null;
+  provider: ethers.BrowserProvider | null;
   network: NetworkConfig;
-  connectWallet: () => Promise<void>;
-  disconnectWallet: () => void;
-  switchPersona: (role: Role) => void;
-  switchNetwork: () => Promise<void>;
   isWrongNetwork: boolean;
+  connectWallet: () => Promise<string | null>;
+  disconnectWallet: () => void;
+  switchNetwork: () => Promise<void>;
+  getSigner: () => Promise<ethers.Signer | null>;
+  // Event listener hook for external listeners (e.g. AuthContext)
+  onAccountChanged?: (callback: (newAddress: string | null) => void) => () => void;
 }
 
 const WalletContext = createContext<WalletContextType | undefined>(undefined);
 
+const accountChangeListeners = new Set<(newAddress: string | null) => void>();
+
 export function WalletProvider({ children }: { children: ReactNode }) {
   const [isConnected, setIsConnected] = useState<boolean>(false);
+  const [isConnecting, setIsConnecting] = useState<boolean>(false);
   const [address, setAddress] = useState<string | null>(null);
-  const [currentStakeholder, setCurrentStakeholder] = useState<StakeholderProfile | null>(null);
-  const [network, setNetwork] = useState<NetworkConfig>(SUPPORTED_NETWORK);
+  const [chainId, setChainId] = useState<number | null>(null);
+  const [signer, setSigner] = useState<ethers.Signer | null>(null);
+  const [provider, setProvider] = useState<ethers.BrowserProvider | null>(null);
   const [isWrongNetwork, setIsWrongNetwork] = useState<boolean>(false);
 
-  // Initialize from localStorage
-  useEffect(() => {
-    try {
-      const savedConnected = localStorage.getItem("medtrace_connected");
-      const savedRoleId = localStorage.getItem("medtrace_active_role_id");
-      if (savedConnected === "true" && savedRoleId) {
-        const found = DEMO_STAKEHOLDERS.find((s) => s.id === savedRoleId);
-        if (found) {
-          setIsConnected(true);
-          setAddress(found.address);
-          setCurrentStakeholder(found);
-        }
+  const notifyAccountChanged = useCallback((newAddr: string | null) => {
+    accountChangeListeners.forEach((listener) => {
+      try {
+        listener(newAddr);
+      } catch (err) {
+        console.error("Error in account change listener:", err);
       }
-    } catch {
-      // ignore SSR
-    }
+    });
   }, []);
 
-  const connectWallet = async () => {
-    // If window.ethereum is present, we could request accounts, or fallback to default Manufacturer persona
-    if (typeof window !== "undefined" && (window as any).ethereum) {
-      try {
-        const accounts = await (window as any).ethereum.request({
-          method: "eth_requestAccounts",
-        });
-        if (accounts && accounts[0]) {
-          const userAddr = accounts[0];
-          setAddress(userAddr);
-          setIsConnected(true);
-          // Match address to a stakeholder or set as unregistered
-          const matched = DEMO_STAKEHOLDERS.find(
-            (s) => s.address.toLowerCase() === userAddr.toLowerCase()
-          );
-          if (matched) {
-            setCurrentStakeholder(matched);
-            localStorage.setItem("medtrace_active_role_id", matched.id);
-          } else {
-            const unregistered: StakeholderProfile = {
-              id: "unreg-1",
-              address: userAddr,
-              role: "UNREGISTERED",
-              roleName: "Unregistered",
-              name: "External Account",
-              organization: "Unknown Stakeholder",
-              licenseNumber: "N/A",
-              location: "Unknown",
-              verified: false,
-              avatarColor: "#6B7280",
-            };
-            setCurrentStakeholder(unregistered);
-            localStorage.setItem("medtrace_active_role_id", unregistered.id);
-          }
-          localStorage.setItem("medtrace_connected", "true");
-          return;
-        }
-      } catch (err) {
-        console.warn("MetaMask request rejected or failed, falling back to simulated persona.", err);
-      }
+  const initProviderAndSigner = useCallback(async () => {
+    if (typeof window === "undefined" || !(window as any).ethereum) {
+      return null;
     }
 
-    // Default simulation fallback: Manufacturer
-    const defaultPersona = DEMO_STAKEHOLDERS[0];
-    setIsConnected(true);
-    setAddress(defaultPersona.address);
-    setCurrentStakeholder(defaultPersona);
-    localStorage.setItem("medtrace_connected", "true");
-    localStorage.setItem("medtrace_active_role_id", defaultPersona.id);
+    try {
+      const browserProvider = new ethers.BrowserProvider((window as any).ethereum);
+      setProvider(browserProvider);
+
+      const net = await browserProvider.getNetwork();
+      const currentChainId = Number(net.chainId);
+      setChainId(currentChainId);
+      setIsWrongNetwork(currentChainId !== SUPPORTED_NETWORK.chainId);
+
+      const accounts = await browserProvider.listAccounts();
+      if (accounts.length > 0) {
+        const currentSigner = await browserProvider.getSigner();
+        const userAddr = (await currentSigner.getAddress()).toLowerCase();
+        setSigner(currentSigner);
+        setAddress(userAddr);
+        setIsConnected(true);
+        return { browserProvider, currentSigner, userAddr, currentChainId };
+      }
+    } catch (err) {
+      console.warn("[WalletContext] Failed to initialize provider:", err);
+    }
+    return null;
+  }, []);
+
+  // Initialize on mount
+  useEffect(() => {
+    initProviderAndSigner();
+  }, [initProviderAndSigner]);
+
+  // Handle Ethereum events (accountsChanged, chainChanged)
+  useEffect(() => {
+    if (typeof window === "undefined" || !(window as any).ethereum) return;
+    const ethereum = (window as any).ethereum;
+
+    const handleAccountsChanged = async (accounts: string[]) => {
+      if (!accounts || accounts.length === 0) {
+        setAddress(null);
+        setSigner(null);
+        setIsConnected(false);
+        notifyAccountChanged(null);
+      } else {
+        const newAddress = accounts[0].toLowerCase();
+        setAddress(newAddress);
+        setIsConnected(true);
+        try {
+          const browserProvider = new ethers.BrowserProvider(ethereum);
+          const newSigner = await browserProvider.getSigner();
+          setProvider(browserProvider);
+          setSigner(newSigner);
+        } catch (e) {
+          console.error("Error updating signer on account switch:", e);
+        }
+        notifyAccountChanged(newAddress);
+      }
+    };
+
+    const handleChainChanged = (chainIdHex: string) => {
+      const newChainId = parseInt(chainIdHex, 16);
+      setChainId(newChainId);
+      setIsWrongNetwork(newChainId !== SUPPORTED_NETWORK.chainId);
+      // Reload provider on chain change per MetaMask recommendation
+      initProviderAndSigner();
+    };
+
+    ethereum.on("accountsChanged", handleAccountsChanged);
+    ethereum.on("chainChanged", handleChainChanged);
+
+    return () => {
+      if (ethereum.removeListener) {
+        ethereum.removeListener("accountsChanged", handleAccountsChanged);
+        ethereum.removeListener("chainChanged", handleChainChanged);
+      }
+    };
+  }, [initProviderAndSigner, notifyAccountChanged]);
+
+  const connectWallet = async (): Promise<string | null> => {
+    if (typeof window === "undefined" || !(window as any).ethereum) {
+      alert("No Ethereum wallet found. Please install MetaMask to connect.");
+      return null;
+    }
+
+    setIsConnecting(true);
+    try {
+      const ethereum = (window as any).ethereum;
+      const browserProvider = new ethers.BrowserProvider(ethereum);
+      setProvider(browserProvider);
+
+      await ethereum.request({ method: "eth_requestAccounts" });
+      const currentSigner = await browserProvider.getSigner();
+      const userAddr = (await currentSigner.getAddress()).toLowerCase();
+
+      const net = await browserProvider.getNetwork();
+      const currentChainId = Number(net.chainId);
+
+      setSigner(currentSigner);
+      setAddress(userAddr);
+      setChainId(currentChainId);
+      setIsConnected(true);
+      setIsWrongNetwork(currentChainId !== SUPPORTED_NETWORK.chainId);
+
+      return userAddr;
+    } catch (err: any) {
+      console.error("[WalletContext] Connection failed:", err);
+      throw err;
+    } finally {
+      setIsConnecting(false);
+    }
   };
 
   const disconnectWallet = () => {
     setIsConnected(false);
     setAddress(null);
-    setCurrentStakeholder(null);
-    localStorage.removeItem("medtrace_connected");
-    localStorage.removeItem("medtrace_active_role_id");
-  };
-
-  const switchPersona = (role: Role) => {
-    if (role === "UNREGISTERED") {
-      const unregistered: StakeholderProfile = {
-        id: "unreg-mock",
-        address: "0x98A...00FF",
-        role: "UNREGISTERED",
-        roleName: "Unregistered",
-        name: "Unverified Entity",
-        organization: "Pending Registration",
-        licenseNumber: "N/A",
-        location: "Unverified",
-        verified: false,
-        avatarColor: "#6B7280",
-      };
-      setIsConnected(true);
-      setAddress(unregistered.address);
-      setCurrentStakeholder(unregistered);
-      localStorage.setItem("medtrace_connected", "true");
-      localStorage.setItem("medtrace_active_role_id", unregistered.id);
-      return;
-    }
-
-    const matched = DEMO_STAKEHOLDERS.find((s) => s.role === role);
-    if (matched) {
-      setIsConnected(true);
-      setAddress(matched.address);
-      setCurrentStakeholder(matched);
-      localStorage.setItem("medtrace_connected", "true");
-      localStorage.setItem("medtrace_active_role_id", matched.id);
-    }
+    setSigner(null);
+    notifyAccountChanged(null);
   };
 
   const switchNetwork = async () => {
-    setIsWrongNetwork(false);
-    setNetwork(SUPPORTED_NETWORK);
+    if (typeof window === "undefined" || !(window as any).ethereum) return;
+    const ethereum = (window as any).ethereum;
+
+    try {
+      await ethereum.request({
+        method: "wallet_switchEthereumChain",
+        params: [{ chainId: SUPPORTED_NETWORK.hexChainId }],
+      });
+      setIsWrongNetwork(false);
+    } catch (switchError: any) {
+      // Error 4902 indicates chain hasn't been added yet
+      if (switchError.code === 4902) {
+        try {
+          await ethereum.request({
+            method: "wallet_addEthereumChain",
+            params: [
+              {
+                chainId: SUPPORTED_NETWORK.hexChainId,
+                chainName: SUPPORTED_NETWORK.name,
+                rpcUrls: [SUPPORTED_NETWORK.rpcUrl],
+                blockExplorerUrls: [SUPPORTED_NETWORK.blockExplorer],
+                nativeCurrency: {
+                  name: "ETH",
+                  symbol: "ETH",
+                  decimals: 18,
+                },
+              },
+            ],
+          });
+          setIsWrongNetwork(false);
+        } catch (addError) {
+          console.error("Failed to add network:", addError);
+        }
+      } else {
+        console.error("Failed to switch network:", switchError);
+      }
+    }
   };
+
+  const getSigner = async (): Promise<ethers.Signer | null> => {
+    if (signer) return signer;
+    if (provider) {
+      try {
+        const s = await provider.getSigner();
+        setSigner(s);
+        return s;
+      } catch {
+        return null;
+      }
+    }
+    return null;
+  };
+
+  const onAccountChanged = (callback: (newAddress: string | null) => void) => {
+    accountChangeListeners.add(callback);
+    return () => {
+      accountChangeListeners.delete(callback);
+    };
+  };
+
+  const currentStakeholder: StakeholderProfile | null = address
+    ? DEMO_STAKEHOLDERS.find((s) => s.address.toLowerCase() === address.toLowerCase()) || {
+        id: address,
+        address: address,
+        role: "UNREGISTERED",
+        roleName: "Unregistered",
+        name: "Stakeholder Account",
+        organization: "Decentralized Entity",
+        licenseNumber: "N/A",
+        location: "Global",
+        verified: false,
+        avatarColor: "#6B7280",
+      }
+    : null;
 
   return (
     <WalletContext.Provider
       value={{
         isConnected,
+        isConnecting,
         address,
         currentStakeholder,
-        network,
+        chainId,
+        signer,
+        provider,
+        network: SUPPORTED_NETWORK,
+        isWrongNetwork,
         connectWallet,
         disconnectWallet,
-        switchPersona,
         switchNetwork,
-        isWrongNetwork,
+        getSigner,
+        onAccountChanged,
       }}
     >
       {children}

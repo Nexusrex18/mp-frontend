@@ -22,11 +22,14 @@ import {
 import {
   getStoredBatches,
   saveStoredBatches,
-  generateTxHash,
 } from "@/lib/mockData";
 import { BatchRecord, CustodyEvent } from "@/lib/types";
-import { useTxState } from "@/context/TxStateContext";
 import { useWallet } from "@/context/WalletContext";
+import { useTxFlow } from "@/lib/hooks/useTxFlow";
+import { custodyApi } from "@/lib/api/custody";
+import { batchesApi, mapApiBatchToRecord } from "@/lib/api/batches";
+import { qrApi } from "@/lib/api/qr";
+import { parseCustodyError } from "@/lib/hooks/useCustody";
 import QRScannerModal from "@/components/shared/QRScannerModal";
 import StatusBadge from "@/components/shared/StatusBadge";
 import { COLORS } from "@/lib/constants";
@@ -34,26 +37,46 @@ import { COLORS } from "@/lib/constants";
 export default function DistributorScanAcceptPage() {
   const router = useRouter();
   const { address, currentStakeholder } = useWallet();
-  const { executeTx } = useTxState();
 
   const [isScannerOpen, setIsScannerOpen] = useState(true);
   const [scannedBatchId, setScannedBatchId] = useState<string>("");
   const [batch, setBatch] = useState<BatchRecord | null>(null);
+  const [inlineError, setInlineError] = useState<string | null>(null);
 
   // Inspection Checklist
   const [sealIntact, setSealIntact] = useState(true);
   const [tempCompliant, setTempCompliant] = useState(true);
   const [notes, setNotes] = useState("Received at Newark Hub Dock 2. Package inspected.");
 
-  const handleScanSuccess = (val: string) => {
-    // Value could be MEDTRACE:BAT-2026-0155:CID or just BAT-2026-0155
+  const handleScanSuccess = async (val: string) => {
+    setInlineError(null);
     let extractedId = val;
     if (val.startsWith("MEDTRACE:")) {
       const parts = val.split(":");
       extractedId = parts[1];
     }
 
+    try {
+      const decoded = await qrApi.decodeQr(val);
+      if (decoded?.batchId || decoded?.targetId) {
+        extractedId = decoded.batchId || decoded.targetId;
+      }
+    } catch {
+      // Use raw extractedId
+    }
+
     setScannedBatchId(extractedId);
+
+    try {
+      const apiBatch = await batchesApi.getBatchById(extractedId);
+      if (apiBatch) {
+        setBatch(mapApiBatchToRecord(apiBatch));
+        return;
+      }
+    } catch {
+      // Fallback
+    }
+
     const batches = getStoredBatches();
     const found = batches.find(
       (b) =>
@@ -64,48 +87,64 @@ export default function DistributorScanAcceptPage() {
     if (found) {
       setBatch(found);
     } else {
-      // Create a fallback found record from first batch for testing
       setBatch(batches[0]);
     }
   };
 
+  const txFlow = useTxFlow({
+    prepare: async () => {
+      setInlineError(null);
+      if (!batch) throw new Error("No batch selected");
+      try {
+        return await custodyApi.prepareAccept({ batchId: batch.id });
+      } catch (err: any) {
+        const parsed = parseCustodyError(err);
+        setInlineError(parsed.message);
+        throw err;
+      }
+    },
+    title: "Confirm Physical Custody Acceptance",
+    description: `Writing custody receipt for ${batch?.id} to Arbitrum Sepolia L2...`,
+    onSuccess: ({ txHash }) => {
+      if (!batch) return;
+      const newCustodyEvent: CustodyEvent = {
+        id: `cust-${Date.now()}`,
+        timestamp: new Date().toISOString(),
+        stage: "ReceivedByDistributor",
+        actorRole: "Distributor",
+        actorName: currentStakeholder?.name || "SwiftLogistics Health",
+        actorAddress: address || "0x3A2...98b1",
+        txHash,
+        blockNumber: 0,
+        location: "Newark Logistics Hub Intake Bay",
+        notes: `${notes} (Physical seal intact: ${sealIntact ? "YES" : "NO"})`,
+        temperatureVerified: tempCompliant,
+      };
+
+      const updatedBatch: BatchRecord = {
+        ...batch,
+        status: "Valid",
+        currentCustodianRole: "Distributor",
+        currentCustodianName: currentStakeholder?.name || "SwiftLogistics Health",
+        currentCustodianAddress: address || "0x3A2...98b1",
+        custodyTimeline: [...batch.custodyTimeline, newCustodyEvent],
+      };
+
+      const all = getStoredBatches();
+      const updated = all.map((b) => (b.id === batch.id ? updatedBatch : b));
+      saveStoredBatches(updated);
+      window.dispatchEvent(new Event("medtrace_data_updated"));
+
+      router.push(`/distributor/batches/${batch.id}`);
+    },
+    onError: (err: any) => {
+      const parsed = parseCustodyError(err);
+      setInlineError(parsed.message);
+    },
+  });
+
   const handleConfirmAccept = async () => {
-    if (!batch) return;
-    const acceptTx = generateTxHash();
-
-    const newCustodyEvent: CustodyEvent = {
-      id: `cust-${Date.now()}`,
-      timestamp: new Date().toISOString(),
-      stage: "ReceivedByDistributor",
-      actorRole: "Distributor",
-      actorName: currentStakeholder?.name || "SwiftLogistics Health",
-      actorAddress: address || "0x3A2...98b1",
-      txHash: acceptTx,
-      blockNumber: 1997400,
-      location: "Newark Logistics Hub Intake Bay",
-      notes: `${notes} (Physical seal intact: ${sealIntact ? "YES" : "NO"})`,
-      temperatureVerified: tempCompliant,
-    };
-
-    const updatedBatch: BatchRecord = {
-      ...batch,
-      status: "Valid",
-      currentCustodianRole: "Distributor",
-      currentCustodianName: currentStakeholder?.name || "SwiftLogistics Health",
-      currentCustodianAddress: address || "0x3A2...98b1",
-      custodyTimeline: [...batch.custodyTimeline, newCustodyEvent],
-    };
-
-    await executeTx({
-      title: "Confirm Physical Custody Acceptance",
-      description: `Writing custody receipt for ${batch.id} to Arbitrum Sepolia L2...`,
-      onCommit: () => {
-        const all = getStoredBatches();
-        const updated = all.map((b) => (b.id === batch.id ? updatedBatch : b));
-        saveStoredBatches(updated);
-        router.push(`/distributor/batches/${batch.id}`);
-      },
-    });
+    await txFlow.execute();
   };
 
   return (
@@ -269,6 +308,13 @@ export default function DistributorScanAcceptPage() {
                   className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 text-xs focus:ring-2 focus:ring-indigo-500 focus:outline-none"
                 />
               </div>
+
+              {inlineError && (
+                <div className="p-3.5 bg-rose-50 border border-rose-200 rounded-2xl text-xs text-rose-800">
+                  <span className="font-bold">Intake Blocked: </span>
+                  <span>{inlineError}</span>
+                </div>
+              )}
             </div>
 
             {/* Actions */}
@@ -285,14 +331,21 @@ export default function DistributorScanAcceptPage() {
 
               <button
                 onClick={handleConfirmAccept}
-                className="px-6 py-3 rounded-2xl font-extrabold text-sm text-white shadow-lg transition-all hover:scale-105 active:scale-95 flex items-center gap-2"
+                disabled={txFlow.isProcessing}
+                className={`px-6 py-3 rounded-2xl font-extrabold text-sm text-white shadow-lg transition-all flex items-center gap-2 ${
+                  txFlow.isProcessing ? 'opacity-70 cursor-not-allowed' : 'hover:scale-105 active:scale-95'
+                }`}
                 style={{
                   backgroundColor: COLORS.magenta,
                   boxShadow: "0 6px 20px rgba(246, 32, 136, 0.35)",
                 }}
               >
                 <CheckCircle2 size={16} />
-                <span>Accept Custody on Arbitrum L2</span>
+                <span>
+                  {txFlow.isProcessing
+                    ? "Confirming on L2..."
+                    : "Accept Custody on Arbitrum L2"}
+                </span>
               </button>
             </div>
           </div>
