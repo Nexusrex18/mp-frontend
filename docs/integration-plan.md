@@ -235,26 +235,26 @@ Stage 10 HARDENING & FULL INTEGRATION PASS
 ## 10. Stage 7 — Dispensing *(the critical stage)*
 
 **Backend first**
-- [ ] `POST /dispensing/prepare` — returns server-derived `dispensingType`, product, batch, `custodianOk`, `blockers[]`
-- [ ] **Reject any request body containing `dispensingType`**
-- [ ] `POST /dispensing/prepare-otc` — no `prescriptionId` in the accepted shape at all
-- [ ] `POST /dispensing/prepare-prescription` — internally re-validates via prescriptions module; `blockers`/failures must hard-block server-side (never rely on the frontend)
-- [ ] `GET /dispensing/history?org=`
-- [ ] Indexer handles `Dispensed` → `dispensing_records` + flips `prescriptions.status = fulfilled`
+- [x] `POST /dispensing/prepare` — returns server-derived `dispensingType`, product, batch, `custodianOk`, `blockers[]`
+- [x] **Reject any request body containing `dispensingType`**
+- [x] `POST /dispensing/prepare-otc` — no `prescriptionId` in the accepted shape at all
+- [x] `POST /dispensing/prepare-prescription` — internally re-validates via prescriptions module; `blockers`/failures must hard-block server-side (never rely on the frontend)
+- [x] `GET /dispensing/history?org=`
+- [x] Indexer handles `Dispensed` → `dispensing_records` + flips `prescriptions.status = fulfilled`
 
 **Frontend next**
-- [ ] `lib/api/dispensing.ts`, `lib/hooks/useDispensing.ts`
-- [ ] `components/pharmacy/OTCDispenseForm.tsx`, `components/pharmacy/PrescriptionDispenseForm.tsx`
-- [ ] `app/pharmacy/dispense/page.tsx` — exact sequence in `frontend-integration.md` §11
-- [ ] `app/pharmacy/history/page.tsx`, `app/pharmacy/page.tsx` (prominent "Scan Medicine" CTA)
+- [x] `lib/api/dispensing.ts`, `lib/hooks/useDispensing.ts`
+- [x] `components/pharmacy/OTCDispenseForm.tsx`, `components/pharmacy/PrescriptionDispenseForm.tsx`
+- [x] `app/pharmacy/dispense/page.tsx` — exact sequence in `frontend-integration.md` §11
+- [x] `app/pharmacy/history/page.tsx`, `app/pharmacy/page.tsx` (prominent "Scan Medicine" CTA)
 
 **Verify — the highest-value checks in the whole project:**
-- Scanning an **OTC** batch renders zero prescription UI, and the request payload contains **no** `prescriptionId` field (absent, not null).
-- Scanning a **Prescription** batch blocks confirmation until validation passes.
-- A prescription validates against a **different batch of the same product** than any the doctor ever saw — this is the product-vs-batch rule working correctly.
-- Reusing a fulfilled prescription returns `PRESCRIPTION_ALREADY_FULFILLED` inline.
-- `grep` both repos: **`dispensingType` never appears in any request body.**
-- After dispensing, `/verify` (public) reflects the new status.
+- [x] Scanning an **OTC** batch renders zero prescription UI, and the request payload contains **no** `prescriptionId` field (absent, not null).
+- [x] Scanning a **Prescription** batch blocks confirmation until validation passes.
+- [x] A prescription validates against a **different batch of the same product** than any the doctor ever saw — this is the product-vs-batch rule working correctly.
+- [x] Reusing a fulfilled prescription returns `PRESCRIPTION_ALREADY_FULFILLED` inline.
+- [x] `grep` both repos: **`dispensingType` never appears in any request body.**
+- [x] After dispensing, `/verify` (public) reflects the new status.
 
 ---
 

@@ -41,6 +41,13 @@ export const batchesApi = {
   listBatches: async (params?: ListBatchesParams): Promise<BatchListResponseDto> => {
     return apiClient.get<BatchListResponseDto>('/batches', { params });
   },
+
+  /**
+   * Alias for listBatches
+   */
+  getBatches: async (params?: ListBatchesParams): Promise<BatchListResponseDto> => {
+    return apiClient.get<BatchListResponseDto>('/batches', { params });
+  },
 };
 
 import { BatchRecord, BatchStatus, DispensingType } from '@/lib/types';

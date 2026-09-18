@@ -399,3 +399,65 @@ export interface PreparedPrescriptionDto extends PreparedTransactionDto {
     doctorWallet: string;
   };
 }
+
+// Dispensing DTOs
+export interface PrepareDispenseDto {
+  batchId: string;
+}
+
+export interface PrepareDispenseResponseDto {
+  batchId: string;
+  dispensingType: 'OTC' | 'PRESCRIPTION';
+  product: {
+    id: string;
+    name: string;
+    dosage: string;
+  };
+  batch: {
+    batchChainId: string | null;
+    expiryDate: string;
+    status: string;
+    availableQty: number;
+  };
+  custodianOk: boolean;
+  blockers: string[];
+  availableQuantity: number;
+  requiresPrescriptionId?: boolean;
+}
+
+export interface PrepareOtcDispenseDto {
+  batchId: string;
+  quantity: number;
+}
+
+export interface PreparePrescriptionDispenseDto {
+  batchId: string;
+  prescriptionId: string;
+  quantity: number;
+}
+
+export interface DispensingHistoryItemDto {
+  id: string;
+  batchId: string;
+  prescriptionId: string | null;
+  pharmacyOrgId: string;
+  quantity: number;
+  dispensingType: 'OTC' | 'PRESCRIPTION';
+  txHash: string;
+  logIndex: number;
+  blockNumber: string | null;
+  createdAt: string;
+  batch: BatchDetailDto;
+  pharmacyOrg?: OrganizationDto;
+  prescription?: PrescriptionDto | null;
+}
+
+export interface DispensingHistoryResponseDto {
+  data: DispensingHistoryItemDto[];
+  history: DispensingHistoryItemDto[];
+  total: number;
+  count: number;
+  page: number;
+  limit: number;
+  totalPages: number;
+}
