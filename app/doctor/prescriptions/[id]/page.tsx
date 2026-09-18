@@ -23,6 +23,8 @@ import { getStoredPrescriptions } from "@/lib/mockData";
 import { PrescriptionRecord } from "@/lib/types";
 import QRCodeDisplay from "@/components/shared/QRCodeDisplay";
 import { COLORS } from "@/lib/constants";
+import { prescriptionsApi, mapApiPrescriptionToRecord } from "@/lib/api/prescriptions";
+import { ApiClientError } from "@/lib/api/client";
 
 export default function DoctorPrescriptionDetailPage({
   params,
@@ -33,20 +35,76 @@ export default function DoctorPrescriptionDetailPage({
   const [prescription, setPrescription] = useState<PrescriptionRecord | null>(
     null
   );
+  const [loading, setLoading] = useState(true);
+  const [accessDenied, setAccessDenied] = useState(false);
   const [copiedHash, setCopiedHash] = useState(false);
 
   useEffect(() => {
-    const all = getStoredPrescriptions();
-    const found = all.find((p) => p.id === resolvedParams.id);
-    if (found) {
-      setPrescription(found);
+    async function loadData() {
+      setLoading(true);
+      setAccessDenied(false);
+      try {
+        const liveRx = await prescriptionsApi.getById(resolvedParams.id);
+        setPrescription(mapApiPrescriptionToRecord(liveRx));
+      } catch (err: any) {
+        if (err?.statusCode === 403 || err?.status === 403) {
+          setAccessDenied(true);
+        } else {
+          // Fallback to local stored prescriptions
+          const all = getStoredPrescriptions();
+          const found = all.find((p) => p.id === resolvedParams.id);
+          if (found) {
+            setPrescription(found);
+          }
+        }
+      } finally {
+        setLoading(false);
+      }
     }
+    loadData();
   }, [resolvedParams.id]);
+
+  if (loading) {
+    return (
+      <div className="py-16 text-center text-xs text-gray-500 flex flex-col items-center gap-2">
+        <div className="w-6 h-6 border-2 border-purple-600 border-t-transparent rounded-full animate-spin" />
+        <span>Loading prescription details from secure cryptographic registry...</span>
+      </div>
+    );
+  }
+
+  if (accessDenied) {
+    return (
+      <div className="max-w-xl mx-auto py-12 px-6 text-center space-y-4">
+        <div className="w-12 h-12 rounded-2xl bg-rose-50 text-rose-600 border border-rose-200 mx-auto flex items-center justify-center font-bold">
+          403
+        </div>
+        <h2 className="text-xl font-extrabold text-gray-900">
+          Airtight Privacy Protection: Access Denied
+        </h2>
+        <p className="text-xs text-gray-600 leading-relaxed">
+          Per MedTrace Invariant #4, clinical prescription content is cryptographically restricted to the issuing physician and licensed dispensing pharmacies. Your current wallet or role is not authorized to inspect this medical record.
+        </p>
+        <Link
+          href="/doctor/prescriptions"
+          className="inline-block px-5 py-2.5 rounded-xl bg-purple-600 text-white font-bold text-xs shadow-md hover:bg-purple-700 transition-colors"
+        >
+          Return to Registry
+        </Link>
+      </div>
+    );
+  }
 
   if (!prescription) {
     return (
-      <div className="py-12 text-center text-xs text-gray-500">
-        Loading prescription details from on-chain registry...
+      <div className="py-16 text-center text-xs text-gray-500 space-y-3">
+        <div>Prescription not found in registry.</div>
+        <Link
+          href="/doctor/prescriptions"
+          className="inline-block px-4 py-2 rounded-xl bg-gray-100 text-gray-700 font-bold text-xs hover:bg-gray-200 transition-colors"
+        >
+          Back to Registry
+        </Link>
       </div>
     );
   }

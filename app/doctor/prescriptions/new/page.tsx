@@ -2,23 +2,20 @@
 
 /* ---------------------------------------------------------------
    MedTrace — Issue New Prescription (/doctor/prescriptions/new)
-   Doctor enters clinical Rx details -> generates off-chain SHA-256 hash
-   -> registers pending Rx on Dispensing.sol -> outputs patient QR code.
+   Doctor enters clinical Rx details -> stores private data in Postgres
+   (NEVER IPFS — Invariant #4) -> registers hash on Prescription.sol
+   -> outputs patient QR code.
 ----------------------------------------------------------------*/
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   ArrowLeft,
   Stethoscope,
   Sparkles,
-  QrCode,
   CheckCircle2,
-  FileCheck,
-  ShieldCheck,
-  Printer,
-  Download,
+  AlertCircle,
 } from "lucide-react";
 import {
   getStoredPrescriptions,
@@ -28,100 +25,235 @@ import {
 import { PrescriptionRecord } from "@/lib/types";
 import { useTxState } from "@/context/TxStateContext";
 import { useWallet } from "@/context/WalletContext";
+import { useTxFlow } from "@/lib/hooks/useTxFlow";
+import { prescriptionsApi } from "@/lib/api/prescriptions";
+import { parsePrescriptionError } from "@/lib/hooks/usePrescriptions";
+import { productsApi } from "@/lib/api/products";
+import { qrApi } from "@/lib/api/qr";
+import { ProductDto, PreparedPrescriptionDto } from "@/lib/api/types";
 import QRCodeDisplay from "@/components/shared/QRCodeDisplay";
 import { COLORS } from "@/lib/constants";
 
-const DRUG_CATALOG = [
+interface SelectableProduct {
+  id: string;
+  name: string;
+  dosage: string;
+  code: string;
+}
+
+const DEFAULT_PRODUCTS: SelectableProduct[] = [
   {
-    code: "0093-3109-01",
+    id: "0093-3109-01",
     name: "Amoxicillin 500mg",
-    defaultDosage: "500mg Capsule, 1 capsule 3x daily with meals for 10 days",
-    defaultQuantity: 30,
+    dosage: "500mg Capsule, 1 capsule 3x daily with meals for 10 days",
+    code: "0093-3109-01",
   },
   {
-    code: "0169-4130-12",
+    id: "0169-4130-12",
     name: "Ozempic 2mg/3mL Pen",
-    defaultDosage: "0.5mg injected subcutaneously once weekly",
-    defaultQuantity: 1,
+    dosage: "0.5mg injected subcutaneously once weekly",
+    code: "0169-4130-12",
   },
   {
-    code: "0071-0156-23",
+    id: "0071-0156-23",
     name: "Lipitor 20mg",
-    defaultDosage: "20mg Tablet, 1 tablet once daily at bedtime",
-    defaultQuantity: 30,
+    dosage: "20mg Tablet, 1 tablet once daily at bedtime",
+    code: "0071-0156-23",
   },
 ];
 
 export default function NewPrescriptionPage() {
   const router = useRouter();
-  const { address, currentStakeholder } = useWallet();
+  const { address, currentStakeholder, isConnected } = useWallet();
   const { executeTx } = useTxState();
 
+  const [products, setProducts] = useState<SelectableProduct[]>(DEFAULT_PRODUCTS);
+  const [selectedProductId, setSelectedProductId] = useState<string>(DEFAULT_PRODUCTS[0].id);
   const [patientId, setPatientId] = useState(
     `PT-${Math.floor(1000 + Math.random() * 9000)}-X`
   );
   const [patientAge, setPatientAge] = useState<number>(45);
   const [patientGender, setPatientGender] = useState("Female");
-  const [selectedDrugIndex, setSelectedDrugIndex] = useState(0);
-  const [dosage, setDosage] = useState(DRUG_CATALOG[0].defaultDosage);
-  const [quantity, setQuantity] = useState<number>(DRUG_CATALOG[0].defaultQuantity);
+  const [dosage, setDosage] = useState(DEFAULT_PRODUCTS[0].dosage);
+  const [quantity, setQuantity] = useState<number>(30);
   const [refillsAllowed, setRefillsAllowed] = useState<number>(0);
   const [instructions, setInstructions] = useState(
     "Take complete course as prescribed. Report any adverse reactions immediately."
   );
+  const [inlineError, setInlineError] = useState<string | null>(null);
   const [issuedRx, setIssuedRx] = useState<PrescriptionRecord | null>(null);
+  const [qrValue, setQrValue] = useState<string>("");
+  const [createdPrep, setCreatedPrep] = useState<PreparedPrescriptionDto | null>(null);
 
-  const selectedDrug = DRUG_CATALOG[selectedDrugIndex];
+  useEffect(() => {
+    async function loadCatalog() {
+      try {
+        const apiProducts = await productsApi.getProducts();
+        if (apiProducts && apiProducts.length > 0) {
+          const mapped: SelectableProduct[] = apiProducts.map((p) => ({
+            id: p.id,
+            name: p.name,
+            dosage: p.dosage || "As directed",
+            code: p.regulatoryClassification || p.id.slice(0, 8),
+          }));
+          setProducts(mapped);
+          setSelectedProductId(mapped[0].id);
+          setDosage(mapped[0].dosage);
+        }
+      } catch {
+        // Keep DEFAULT_PRODUCTS
+      }
+    }
+    loadCatalog();
+  }, []);
 
-  const handleDrugChange = (idx: number) => {
-    setSelectedDrugIndex(idx);
-    setDosage(DRUG_CATALOG[idx].defaultDosage);
-    setQuantity(DRUG_CATALOG[idx].defaultQuantity);
+  const selectedProduct =
+    products.find((p) => p.id === selectedProductId) || products[0];
+
+  const handleProductChange = (productId: string) => {
+    setSelectedProductId(productId);
+    const prod = products.find((p) => p.id === productId);
+    if (prod) {
+      setDosage(prod.dosage);
+    }
   };
+
+  const txFlow = useTxFlow({
+    prepare: async () => {
+      setInlineError(null);
+      const expiry = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000); // 30 days
+      try {
+        const prep = await prescriptionsApi.create({
+          patientRef: patientId,
+          productId: selectedProduct.id,
+          dosage,
+          quantity,
+          expiry: expiry.toISOString(),
+        });
+        setCreatedPrep(prep);
+        return prep;
+      } catch (err: any) {
+        const parsed = parsePrescriptionError(err);
+        setInlineError(parsed.message);
+        throw err;
+      }
+    },
+    title: "Issue Cryptographic Prescription",
+    description: `Registering prescription for ${selectedProduct.name} on Prescription.sol...`,
+    onSuccess: async ({ txHash }) => {
+      const now = new Date();
+      const expiry = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
+      const rxId =
+        createdPrep?.prescription?.id ||
+        `RX-2026-${Math.floor(1000 + Math.random() * 9000)}`;
+      const rxHash =
+        createdPrep?.prescription?.prescriptionHash ||
+        generatePrescriptionHash(
+          patientId,
+          selectedProduct.code,
+          address || "0x14E...C309",
+          now.toISOString()
+        );
+
+      let finalQr = rxHash;
+      if (createdPrep?.prescription?.id) {
+        try {
+          const qrRes = await qrApi.generateQr({
+            prescriptionId: createdPrep.prescription.id,
+          });
+          if (qrRes?.payload) {
+            finalQr = qrRes.payload;
+          }
+        } catch {
+          // Fallback to rxHash
+        }
+      }
+
+      const newRx: PrescriptionRecord = {
+        id: rxId,
+        prescriptionHash: rxHash,
+        patientIdentifier: patientId,
+        patientAge,
+        patientGender,
+        drugCode: selectedProduct.code,
+        drugName: selectedProduct.name,
+        dosage,
+        quantity,
+        refillsAllowed,
+        refillsRemaining: refillsAllowed,
+        issuedAt: now.toISOString(),
+        expiresAt: expiry.toISOString(),
+        status: "Pending",
+        doctorName: currentStakeholder?.name || "Dr. Evelyn Reed, MD",
+        doctorAddress: address || createdPrep?.prescription?.doctorWallet || "0x14E...C309",
+        doctorLicense: currentStakeholder?.licenseNumber || "MED-NY-492019",
+        instructions,
+      };
+
+      const existing = getStoredPrescriptions();
+      saveStoredPrescriptions([newRx, ...existing]);
+      window.dispatchEvent(new Event("medtrace_data_updated"));
+
+      setIssuedRx(newRx);
+      setQrValue(finalQr);
+    },
+    onError: (err) => {
+      const parsed = parsePrescriptionError(err);
+      setInlineError(parsed.message);
+    },
+  });
 
   const handleIssuePrescription = async (e: React.FormEvent) => {
     e.preventDefault();
+    setInlineError(null);
 
-    const rxId = `RX-2026-${Math.floor(1000 + Math.random() * 9000)}`;
-    const now = new Date();
-    const expiry = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000); // 30 days
-    const rxHash = generatePrescriptionHash(
-      patientId,
-      selectedDrug.code,
-      address || "0x14E...C309",
-      now.toISOString()
-    );
+    if (isConnected) {
+      await txFlow.execute();
+    } else {
+      // Mock / Offline execution
+      const now = new Date();
+      const expiry = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
+      const fallbackRxId = `RX-2026-${Math.floor(1000 + Math.random() * 9000)}`;
+      const rxHash = generatePrescriptionHash(
+        patientId,
+        selectedProduct.code,
+        address || "0x14E...C309",
+        now.toISOString()
+      );
 
-    const newPrescription: PrescriptionRecord = {
-      id: rxId,
-      prescriptionHash: rxHash,
-      patientIdentifier: patientId,
-      patientAge,
-      patientGender,
-      drugCode: selectedDrug.code,
-      drugName: selectedDrug.name,
-      dosage,
-      quantity,
-      refillsAllowed,
-      refillsRemaining: refillsAllowed,
-      issuedAt: now.toISOString(),
-      expiresAt: expiry.toISOString(),
-      status: "Pending",
-      doctorName: currentStakeholder?.name || "Dr. Evelyn Reed, MD",
-      doctorAddress: address || "0x14E...C309",
-      doctorLicense: currentStakeholder?.licenseNumber || "MED-NY-492019",
-      instructions,
-    };
+      const newRx: PrescriptionRecord = {
+        id: fallbackRxId,
+        prescriptionHash: rxHash,
+        patientIdentifier: patientId,
+        patientAge,
+        patientGender,
+        drugCode: selectedProduct.code,
+        drugName: selectedProduct.name,
+        dosage,
+        quantity,
+        refillsAllowed,
+        refillsRemaining: refillsAllowed,
+        issuedAt: now.toISOString(),
+        expiresAt: expiry.toISOString(),
+        status: "Pending",
+        doctorName: currentStakeholder?.name || "Dr. Evelyn Reed, MD",
+        doctorAddress: address || "0x14E...C309",
+        doctorLicense: currentStakeholder?.licenseNumber || "MED-NY-492019",
+        instructions,
+      };
 
-    await executeTx({
-      title: "Issue Cryptographic Prescription",
-      description: `Registering prescription ${rxId} (${selectedDrug.name}) on Dispensing.sol...`,
-      onCommit: () => {
-        const existing = getStoredPrescriptions();
-        saveStoredPrescriptions([newPrescription, ...existing]);
-        setIssuedRx(newPrescription);
-      },
-    });
+      await executeTx({
+        title: "Issue Cryptographic Prescription",
+        description: `Registering prescription ${fallbackRxId} (${selectedProduct.name}) on Prescription.sol...`,
+        onCommit: () => {
+          const existing = getStoredPrescriptions();
+          saveStoredPrescriptions([newRx, ...existing]);
+          window.dispatchEvent(new Event("medtrace_data_updated"));
+          setIssuedRx(newRx);
+          setQrValue(rxHash);
+        },
+      });
+    }
   };
 
   return (
@@ -149,11 +281,21 @@ export default function NewPrescriptionPage() {
                   Issue Digital Prescription (e-Rx)
                 </h1>
                 <p className="text-xs text-gray-500">
-                  Creates an immutable cryptographic hash registered on `Dispensing.sol`
+                  Stores private data in Postgres (Invariant #4) and registers hash on Prescription.sol
                 </p>
               </div>
             </div>
           </div>
+
+          {inlineError && (
+            <div className="p-4 bg-rose-50 border border-rose-200 rounded-2xl flex items-start gap-2.5 text-xs text-rose-800">
+              <AlertCircle size={16} className="shrink-0 mt-0.5 text-rose-600" />
+              <div>
+                <span className="font-bold">Prescription Error: </span>
+                <span>{inlineError}</span>
+              </div>
+            </div>
+          )}
 
           <form onSubmit={handleIssuePrescription} className="space-y-4">
             {/* Patient Anonymized Data */}
@@ -202,16 +344,16 @@ export default function NewPrescriptionPage() {
             {/* Prescribed Drug Catalog */}
             <div>
               <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1">
-                Select Prescribed Drug (matches NDC Registry):
+                Select Prescribed Medication:
               </label>
               <select
-                value={selectedDrugIndex}
-                onChange={(e) => handleDrugChange(Number(e.target.value))}
+                value={selectedProductId}
+                onChange={(e) => handleProductChange(e.target.value)}
                 className="w-full px-4 py-3 rounded-xl border border-gray-200 text-xs font-semibold focus:ring-2 focus:ring-purple-500 focus:outline-none bg-white"
               >
-                {DRUG_CATALOG.map((drug, idx) => (
-                  <option key={drug.code} value={idx}>
-                    {drug.name} (NDC: {drug.code})
+                {products.map((prod) => (
+                  <option key={prod.id} value={prod.id}>
+                    {prod.name} ({prod.code})
                   </option>
                 ))}
               </select>
@@ -261,14 +403,23 @@ export default function NewPrescriptionPage() {
 
             <button
               type="submit"
-              className="w-full py-4 px-6 rounded-2xl font-extrabold text-sm text-white shadow-xl transition-all hover:scale-105 active:scale-95 flex items-center justify-center gap-2"
+              disabled={txFlow.isProcessing}
+              className={`w-full py-4 px-6 rounded-2xl font-extrabold text-sm text-white shadow-xl transition-all flex items-center justify-center gap-2 ${
+                txFlow.isProcessing
+                  ? "opacity-70 cursor-not-allowed"
+                  : "hover:scale-105 active:scale-95"
+              }`}
               style={{
                 backgroundColor: COLORS.magenta,
                 boxShadow: "0 8px 25px rgba(246, 32, 136, 0.4)",
               }}
             >
               <Sparkles size={18} />
-              <span>Sign & Register Prescription on L2</span>
+              <span>
+                {txFlow.isProcessing
+                  ? "Signing & Registering on Arbitrum L2..."
+                  : "Sign & Register Prescription on L2"}
+              </span>
             </button>
           </form>
         </div>
@@ -284,13 +435,13 @@ export default function NewPrescriptionPage() {
               Prescription Issued & Registered!
             </h2>
             <p className="text-xs text-gray-500 mt-1 font-mono">
-              Prescription Hash: <strong className="text-purple-800">{issuedRx.id}</strong>
+              Prescription Ref: <strong className="text-purple-800">{issuedRx.id}</strong>
             </p>
           </div>
 
           {/* QR Code for patient */}
           <QRCodeDisplay
-            value={issuedRx.prescriptionHash}
+            value={qrValue || issuedRx.prescriptionHash}
             title={`Prescription: ${issuedRx.drugName}`}
             subtitle={`Patient: ${issuedRx.patientIdentifier} • Valid 30 Days`}
           />

@@ -316,7 +316,86 @@ export interface CustodyHistoryResponseDto {
     currentCustodian: OrganizationDto;
   };
   history: CustodyHistoryItemDto[];
+}// Prescription DTOs
+export interface CreatePrescriptionDto {
+  patientRef: string;
+  productId: string;
+  dosage: string;
+  quantity: number;
+  expiry: string;
 }
 
+export interface PrescriptionDto {
+  id: string;
+  prescriptionChainId?: string | null;
+  doctorId: string;
+  patientRef: string;
+  productId: string;
+  product: ProductDto;
+  dosage: string;
+  quantity: number;
+  issuedAt: string;
+  expiry: string;
+  status: 'PENDING' | 'FULFILLED' | 'EXPIRED' | 'CANCELLED';
+  prescriptionHash: string;
+  createdAt: string;
+  doctor?: {
+    id: string;
+    walletAddress: string;
+  };
+  dispensingRecords?: Array<{
+    id: string;
+    quantity: number;
+    txHash: string;
+    createdAt: string;
+    pharmacyOrg?: OrganizationDto;
+    batch?: {
+      id: string;
+      batchNumber?: string;
+    };
+  }>;
+}
 
+export interface PrescriptionListResponseDto {
+  data: PrescriptionDto[];
+  prescriptions?: PrescriptionDto[];
+  total: number;
+  count: number;
+  page: number;
+  limit: number;
+  totalPages: number;
+}
 
+export interface ValidatePrescriptionDto {
+  scannedBatchProductId: string;
+  batchProductId?: string;
+}
+
+export interface ValidatePrescriptionResponseDto {
+  valid: boolean;
+  prescription: {
+    id: string;
+    prescriptionChainId?: string | null;
+    prescriptionHash: string;
+    status: string;
+    expiry: string;
+    quantity: number;
+    productId: string;
+    productName: string;
+    dosage: string;
+    doctorWallet?: string;
+  };
+  failures: string[];
+}
+
+export interface PreparedPrescriptionDto extends PreparedTransactionDto {
+  prescription: {
+    id: string;
+    prescriptionHash: string;
+    status: string;
+    expiry: string;
+    issuedAt: string;
+    product: ProductDto;
+    doctorWallet: string;
+  };
+}

@@ -216,17 +216,17 @@ Stage 10 HARDENING & FULL INTEGRATION PASS
 ## 9. Stage 6 — Doctor Prescriptions
 
 **Backend first**
-- [ ] `src/prescriptions/` — `POST /prescriptions` (writes private Postgres content **+** returns `PreparedTransactionDto` for `Prescription.createPrescription`)
-- [ ] `GET /prescriptions/:id` — **403 for every role except issuing doctor and authenticated pharmacy**
-- [ ] `GET /prescriptions?doctor=`
-- [ ] `POST /prescriptions/:id/validate` — body `{ scannedBatchProductId }`, returns `{ valid, prescription, failures[] }`
-- [ ] Indexer handles `PrescriptionCreated` / `PrescriptionFulfilled`
-- [ ] 409 codes: `PRESCRIPTION_EXPIRED`, `PRESCRIPTION_ALREADY_FULFILLED`, `PRESCRIPTION_PRODUCT_MISMATCH`
+- [x] `src/prescriptions/` — `POST /prescriptions` (writes private Postgres content **+** returns `PreparedTransactionDto` for `Prescription.createPrescription`)
+- [x] `GET /prescriptions/:id` — **403 for every role except issuing doctor and authenticated pharmacy**
+- [x] `GET /prescriptions?doctor=`
+- [x] `POST /prescriptions/:id/validate` — body `{ scannedBatchProductId }`, returns `{ valid, prescription, failures[] }`
+- [x] Indexer handles `PrescriptionCreated` / `PrescriptionFulfilled`
+- [x] 409 codes: `PRESCRIPTION_EXPIRED`, `PRESCRIPTION_ALREADY_FULFILLED`, `PRESCRIPTION_PRODUCT_MISMATCH`
 
 **Frontend next**
-- [ ] `lib/api/prescriptions.ts`, `lib/hooks/usePrescriptions.ts`
-- [ ] `app/doctor/page.tsx`, `prescriptions/new/`, `prescriptions/`, `prescriptions/[id]/`
-- [ ] Prescription QR via `QRCodeDisplay`
+- [x] `lib/api/prescriptions.ts`, `lib/hooks/usePrescriptions.ts`
+- [x] `app/doctor/page.tsx`, `prescriptions/new/`, `prescriptions/`, `prescriptions/[id]/`
+- [x] Prescription QR via `QRCodeDisplay`
 
 **Verify:** doctor issues a prescription → private content is in Postgres, **not** IPFS (verify by inspection) → hash/status on-chain → QR generated. Fetching `GET /prescriptions/:id` as a distributor returns 403. Prescription references `product_id`, **never** a batch ID — confirm in the DB row.
 
