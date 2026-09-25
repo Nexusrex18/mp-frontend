@@ -53,8 +53,14 @@ export default function DistributorDashboard() {
             : [];
 
         const stored = getStoredBatches();
-        const existingIds = new Set([...apiBatches.map((b) => b.id), ...incomingItems.map((b) => b.id)]);
-        const merged = [...incomingItems, ...apiBatches, ...stored.filter((b) => !existingIds.has(b.id))];
+        // Dedupe by id: the same batch can appear in both incoming and the batch list.
+        // Earlier entries win (incoming carries the pending-transfer state).
+        const seen = new Set<string>();
+        const merged = [...incomingItems, ...apiBatches, ...stored].filter((b) => {
+          if (seen.has(b.id)) return false;
+          seen.add(b.id);
+          return true;
+        });
         setBatches(merged);
       } catch {
         setBatches(getStoredBatches());

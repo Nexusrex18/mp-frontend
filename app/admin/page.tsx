@@ -294,9 +294,17 @@ export default function AdminDashboard() {
                     </span>
                   </div>
                   <div className="text-xs text-slate-600 mt-1">
-                    Actor: <span className="mt-mono">{item.actorAddress.slice(0, 8)}…{item.actorAddress.slice(-4)}</span>
-                    {item.actorRole && ` (${item.actorRole})`} • Resource: {item.targetResource}
-                    {item.targetId ? ` #${item.targetId.slice(0, 8)}` : ""}
+                    Actor:{" "}
+                    <span className="mt-mono">
+                      {item.actorAddress && item.actorAddress.length > 10
+                        ? `${item.actorAddress.slice(0, 8)}…${item.actorAddress.slice(-4)}`
+                        : item.actorAddress || "System"}
+                    </span>
+                    {item.actorRole && ` (${item.actorRole})`} • Resource:{" "}
+                    {item.targetResource || (item as any).targetType || "System"}
+                    {item.targetId && item.targetId !== "N/A"
+                      ? ` #${item.targetId.slice(0, 8)}`
+                      : ""}
                   </div>
                 </div>
               </div>

@@ -35,9 +35,8 @@ export default function DoctorDashboard() {
       const res = await prescriptionsApi.list();
       const items = res.data || res.prescriptions || [];
       const apiMapped = items.map(mapApiPrescriptionToRecord);
-      const stored = getStoredPrescriptions();
-      const apiIds = new Set(apiMapped.map((p) => p.id));
-      setPrescriptions([...apiMapped, ...stored.filter((p) => !apiIds.has(p.id))]);
+      // API is the source of truth; merging local cache would show phantom duplicates.
+      setPrescriptions(apiMapped);
     } catch {
       setPrescriptions(getStoredPrescriptions());
     } finally {

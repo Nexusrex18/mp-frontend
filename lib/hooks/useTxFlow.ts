@@ -93,7 +93,10 @@ export function useTxFlow<TPollData = any>(
     try {
       prepared = await prepare();
     } catch (err: any) {
-      console.error("[useTxFlow] Prepare step failed:", err);
+      // 4xx from the backend are expected business-rule rejections (shown inline to the user).
+      const isExpectedRejection = typeof err?.statusCode === "number" && err.statusCode >= 400 && err.statusCode < 500;
+      if (isExpectedRejection) console.warn("[useTxFlow] Prepare rejected by backend:", err.message);
+      else console.error("[useTxFlow] Prepare step failed:", err);
       const msg = err?.message || "Failed to prepare transaction with backend.";
       setLocalError(msg);
       setTxInfo({

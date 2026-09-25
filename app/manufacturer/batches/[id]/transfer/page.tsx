@@ -21,12 +21,12 @@ import {
 import {
   getStoredBatches,
   saveStoredBatches,
-  DEMO_STAKEHOLDERS,
 } from "@/lib/mockData";
 import { BatchRecord, CustodyEvent } from "@/lib/types";
 import { useWallet } from "@/context/WalletContext";
 import { useTxFlow } from "@/lib/hooks/useTxFlow";
 import { custodyApi } from "@/lib/api/custody";
+import type { StakeholderItemDto } from "@/lib/api/types";
 import { batchesApi, mapApiBatchToRecord } from "@/lib/api/batches";
 import { parseCustodyError } from "@/lib/hooks/useCustody";
 import { COLORS } from "@/lib/constants";
@@ -41,8 +41,10 @@ export default function ManufacturerTransferPage({
   const { address, currentStakeholder } = useWallet();
 
   const [batch, setBatch] = useState<BatchRecord | null>(null);
-  const [selectedDistributorId, setSelectedDistributorId] = useState("stk-2");
-  const [customWallet, setCustomWallet] = useState("0x70997970C51812dc3A010C7d01b50e0d17dc79C8");
+  const [distributors, setDistributors] = useState<StakeholderItemDto[]>([]);
+  const [distributorsLoading, setDistributorsLoading] = useState(true);
+  const [selectedDistributorId, setSelectedDistributorId] = useState("");
+  const [customWallet, setCustomWallet] = useState("");
   const [carrierRef, setCarrierRef] = useState("DHL ColdChain Express #TL-882");
   const [notes, setNotes] = useState(
     "Dispatched in temperature-controlled crate (4.2°C). Seal #SL-9941."
@@ -50,9 +52,28 @@ export default function ManufacturerTransferPage({
   const [tempChecked, setTempChecked] = useState(true);
   const [inlineError, setInlineError] = useState<string | null>(null);
 
-  const distributors = DEMO_STAKEHOLDERS.filter(
-    (s) => s.role === "DISTRIBUTOR_ROLE"
-  );
+  useEffect(() => {
+    let isMounted = true;
+    custodyApi
+      .eligibleRecipients('DISTRIBUTOR')
+      .then((res) => {
+        if (!isMounted) return;
+        setDistributors(res.data);
+        if (res.data.length > 0) {
+          setSelectedDistributorId(res.data[0].id);
+          setCustomWallet(res.data[0].walletAddress);
+        }
+      })
+      .catch((err: any) => {
+        if (isMounted) setInlineError(err?.message || "Failed to load distributors.");
+      })
+      .finally(() => {
+        if (isMounted) setDistributorsLoading(false);
+      });
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   useEffect(() => {
     let isMounted = true;
@@ -80,14 +101,14 @@ export default function ManufacturerTransferPage({
     };
   }, [resolvedParams.id]);
 
-  const selectedDistributor =
-    distributors.find((d) => d.id === selectedDistributorId) || distributors[0];
+  const selectedDistributor = distributors.find((d) => d.id === selectedDistributorId);
+  const distributorName = selectedDistributor?.organization?.name || "Distributor";
 
   const txFlow = useTxFlow({
     prepare: async () => {
       setInlineError(null);
       if (!batch) throw new Error("Batch not loaded");
-      const targetAddress = customWallet.trim() || selectedDistributor.address;
+      const targetAddress = customWallet.trim();
       try {
         return await custodyApi.prepareTransfer({
           batchId: batch.id,
@@ -100,10 +121,10 @@ export default function ManufacturerTransferPage({
       }
     },
     title: "Initiate Custody Transfer",
-    description: `Transferring custody of ${batch?.id || 'batch'} to ${selectedDistributor.name} on L2...`,
+    description: `Transferring custody of ${batch?.id || 'batch'} to ${distributorName} on L2...`,
     onSuccess: ({ txHash }) => {
       if (!batch) return;
-      const targetAddress = customWallet.trim() || selectedDistributor.address;
+      const targetAddress = customWallet.trim();
       const newCustodyEvent: CustodyEvent = {
         id: `cust-${Date.now()}`,
         timestamp: new Date().toISOString(),
@@ -111,7 +132,7 @@ export default function ManufacturerTransferPage({
         actorRole: "Manufacturer",
         actorName: currentStakeholder?.name || "Apex BioPharma Inc.",
         actorAddress: address || "0x71C...4F9a",
-        toActorName: selectedDistributor.name,
+        toActorName: distributorName,
         toActorAddress: targetAddress,
         txHash,
         blockNumber: 0,
@@ -124,7 +145,7 @@ export default function ManufacturerTransferPage({
         ...batch,
         status: "InTransit",
         currentCustodianRole: "Distributor",
-        currentCustodianName: selectedDistributor.name,
+        currentCustodianName: distributorName,
         currentCustodianAddress: targetAddress,
         custodyTimeline: [...batch.custodyTimeline, newCustodyEvent],
       };
@@ -149,6 +170,16 @@ export default function ManufacturerTransferPage({
       </div>
     );
   }
+
+  // Mirror the backend rules so the user isn't sent through a doomed signing flow.
+  const transferBlockedReason =
+    batch.status === "InTransit"
+      ? "This batch is already in transit. Wait for the distributor to accept it before starting another transfer."
+      : batch.currentCustodianRole !== "Manufacturer"
+      ? `Custody has already moved to the ${batch.currentCustodianRole.toLowerCase()}. Only the current custodian can transfer this batch.`
+      : batch.status !== "Valid"
+      ? `A batch with status "${batch.status}" cannot be transferred.`
+      : null;
 
   const handleConfirmTransfer = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -222,12 +253,21 @@ export default function ManufacturerTransferPage({
             </label>
             <select
               value={selectedDistributorId}
-              onChange={(e) => setSelectedDistributorId(e.target.value)}
+              disabled={distributorsLoading}
+              onChange={(e) => {
+                setSelectedDistributorId(e.target.value);
+                const d = distributors.find((x) => x.id === e.target.value);
+                if (d) setCustomWallet(d.walletAddress);
+              }}
               className="w-full px-4 py-3 rounded-xl border border-gray-200 text-xs font-semibold focus:ring-2 focus:ring-indigo-500 focus:outline-none bg-white"
             >
+              {distributorsLoading && <option value="">Loading distributors...</option>}
+              {!distributorsLoading && distributors.length === 0 && (
+                <option value="">No registered distributors</option>
+              )}
               {distributors.map((dist) => (
                 <option key={dist.id} value={dist.id}>
-                  {dist.name} ({dist.location}) — {dist.licenseNumber}
+                  {dist.organization?.name || "Unnamed distributor"} — {dist.walletAddress.slice(0, 6)}…{dist.walletAddress.slice(-4)}
                 </option>
               ))}
             </select>
@@ -289,6 +329,13 @@ export default function ManufacturerTransferPage({
             </span>
           </label>
 
+          {transferBlockedReason && (
+            <div className="p-3.5 bg-amber-50 border border-amber-200 rounded-2xl text-xs text-amber-900">
+              <span className="font-bold">Transfer unavailable: </span>
+              <span>{transferBlockedReason}</span>
+            </div>
+          )}
+
           {inlineError && (
             <div className="p-3.5 bg-rose-50 border border-rose-200 rounded-2xl text-xs text-rose-800 flex items-start gap-2">
               <span className="font-bold">Transfer Blocked:</span>
@@ -298,9 +345,9 @@ export default function ManufacturerTransferPage({
 
           <button
             type="submit"
-            disabled={txFlow.isProcessing}
+            disabled={txFlow.isProcessing || !!transferBlockedReason}
             className={`w-full py-3.5 px-6 rounded-2xl font-extrabold text-sm text-white shadow-lg transition-all flex items-center justify-center gap-2 ${
-              txFlow.isProcessing ? 'opacity-70 cursor-not-allowed' : 'hover:scale-105 active:scale-95'
+              txFlow.isProcessing || transferBlockedReason ? 'opacity-70 cursor-not-allowed' : 'hover:scale-105 active:scale-95'
             }`}
             style={{
               backgroundColor: COLORS.magenta,

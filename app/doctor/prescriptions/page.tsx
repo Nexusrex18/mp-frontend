@@ -30,9 +30,9 @@ export default function DoctorPrescriptionsPage() {
       const res = await prescriptionsApi.list();
       const items = res.data || res.prescriptions || [];
       const apiMapped = items.map(mapApiPrescriptionToRecord);
-      const stored = getStoredPrescriptions();
-      const apiIds = new Set(apiMapped.map((p) => p.id));
-      setPrescriptions([...apiMapped, ...stored.filter((p) => !apiIds.has(p.id))]);
+      // The API is the source of truth. Locally cached entries are only a fallback for when
+      // the API is unreachable; merging them would show phantom duplicates of the same Rx.
+      setPrescriptions(apiMapped);
     } catch {
       setPrescriptions(getStoredPrescriptions());
     } finally {

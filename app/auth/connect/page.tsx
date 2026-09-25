@@ -69,9 +69,12 @@ export default function ConnectPage() {
         router.push("/unauthorized");
       }
     } catch (err: any) {
-      console.error("[ConnectPage] SIWE login failed:", err);
+      const userRejected = err?.code === "ACTION_REJECTED" || err?.message?.includes("rejected");
+      // A declined signature is a normal user choice, not an application error.
+      if (userRejected) console.warn("[ConnectPage] SIWE signature declined by user.");
+      else console.error("[ConnectPage] SIWE login failed:", err);
       setSigningState("error");
-      if (err?.code === "ACTION_REJECTED" || err?.message?.includes("rejected")) {
+      if (userRejected) {
         setErrorMessage("Signature request was declined in MetaMask.");
       } else {
         setErrorMessage(err?.message || "Authentication failed. Please try again.");

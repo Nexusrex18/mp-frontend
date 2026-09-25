@@ -7,7 +7,7 @@
    -> outputs patient QR code.
 ----------------------------------------------------------------*/
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -83,7 +83,10 @@ export default function NewPrescriptionPage() {
   const [inlineError, setInlineError] = useState<string | null>(null);
   const [issuedRx, setIssuedRx] = useState<PrescriptionRecord | null>(null);
   const [qrValue, setQrValue] = useState<string>("");
-  const [createdPrep, setCreatedPrep] = useState<PreparedPrescriptionDto | null>(null);
+  const [, setCreatedPrep] = useState<PreparedPrescriptionDto | null>(null);
+  // A ref (not state): onSuccess runs from a closure captured before prepare() resolved,
+  // so state would still be null there and we'd fabricate a second, different prescription.
+  const createdPrepRef = useRef<PreparedPrescriptionDto | null>(null);
 
   useEffect(() => {
     async function loadCatalog() {
@@ -131,6 +134,7 @@ export default function NewPrescriptionPage() {
           expiry: expiry.toISOString(),
         });
         setCreatedPrep(prep);
+        createdPrepRef.current = prep;
         return prep;
       } catch (err: any) {
         const parsed = parsePrescriptionError(err);
@@ -141,6 +145,7 @@ export default function NewPrescriptionPage() {
     title: "Issue Cryptographic Prescription",
     description: `Registering prescription for ${selectedProduct.name} on Prescription.sol...`,
     onSuccess: async ({ txHash }) => {
+      const createdPrep = createdPrepRef.current;
       const now = new Date();
       const expiry = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
       const rxId =

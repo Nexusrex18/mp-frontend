@@ -5,10 +5,23 @@ import {
   PreparedTransactionDto,
   IncomingTransfersResponseDto,
   CustodyHistoryResponseDto,
+  StakeholdersResponseDto,
 } from './types';
 import { CustodyEvent, RoleName } from '@/lib/types';
 
 export const custodyApi = {
+  /**
+   * GET /custody/eligible-recipients
+   * Registered distributors/pharmacies that hold the on-chain role needed to receive custody.
+   */
+  eligibleRecipients: async (
+    role: 'DISTRIBUTOR' | 'PHARMACY' = 'DISTRIBUTOR',
+  ): Promise<StakeholdersResponseDto> => {
+    return apiClient.get<StakeholdersResponseDto>('/custody/eligible-recipients', {
+      params: { role },
+    });
+  },
+
   /**
    * POST /custody/prepare-transfer
    * Returns PreparedTransactionDto for Custody.initiateTransfer client-side signing.

@@ -119,18 +119,24 @@ export default function CreateBatchWizard({ onSuccess }: CreateBatchWizardProps)
         ipfsCid: ipfsCid || undefined,
       });
     },
-    onSuccess: async ({ txHash }) => {
-      // Trigger QR code creation
+    onSuccess: async ({ txHash, data }) => {
+      // The QR must reference the indexed batch (never the tx hash). The indexer
+      // status payload carries the on-chain batchId from BatchRegistered.
       let targetPayload = `MEDTRACE:TX:${txHash}`;
-      try {
-        const qrRes = await qrApi.generateQr({
-          batchId: txHash,
-        });
-        if (qrRes?.payload) {
-          targetPayload = qrRes.payload;
+      const chainBatchId: string | undefined = data?.entity?.payload?.batchId;
+      if (chainBatchId) {
+        // The raw event can be visible a moment before the batches row is written.
+        for (let attempt = 0; attempt < 5; attempt++) {
+          try {
+            const qrRes = await qrApi.generateQr({ batchId: String(chainBatchId) });
+            if (qrRes?.payload) {
+              targetPayload = qrRes.payload;
+              break;
+            }
+          } catch {
+            await new Promise((r) => setTimeout(r, 1000));
+          }
         }
-      } catch {
-        // Fallback to tx hash reference
       }
 
       const created = {

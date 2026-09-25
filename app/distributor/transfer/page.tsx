@@ -20,12 +20,12 @@ import {
 import {
   getStoredBatches,
   saveStoredBatches,
-  DEMO_STAKEHOLDERS,
 } from "@/lib/mockData";
 import { BatchRecord, CustodyEvent } from "@/lib/types";
 import { useWallet } from "@/context/WalletContext";
 import { useTxFlow } from "@/lib/hooks/useTxFlow";
 import { custodyApi } from "@/lib/api/custody";
+import type { StakeholderItemDto } from "@/lib/api/types";
 import { batchesApi, mapApiBatchToRecord } from "@/lib/api/batches";
 import { parseCustodyError } from "@/lib/hooks/useCustody";
 import { COLORS } from "@/lib/constants";
@@ -39,8 +39,10 @@ function DistributorTransferContent() {
 
   const [batches, setBatches] = useState<BatchRecord[]>([]);
   const [selectedBatchId, setSelectedBatchId] = useState(initialBatchId);
-  const [selectedPharmacyId, setSelectedPharmacyId] = useState("stk-3");
-  const [customPharmacyWallet, setCustomPharmacyWallet] = useState("0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC");
+  const [pharmacies, setPharmacies] = useState<StakeholderItemDto[]>([]);
+  const [pharmaciesLoading, setPharmaciesLoading] = useState(true);
+  const [selectedPharmacyId, setSelectedPharmacyId] = useState("");
+  const [customPharmacyWallet, setCustomPharmacyWallet] = useState("");
   const [carrierNotes, setCarrierNotes] = useState(
     "Local refrigerated medical courier van #NY-4402. Direct drop-off."
   );
@@ -77,16 +79,39 @@ function DistributorTransferContent() {
     loadBatches();
   }, [selectedBatchId]);
 
-  const pharmacies = DEMO_STAKEHOLDERS.filter((s) => s.role === "PHARMACY_ROLE");
-  const selectedPharmacy =
-    pharmacies.find((p) => p.id === selectedPharmacyId) || pharmacies[0];
+  // Real pharmacies that hold PHARMACY_ROLE on-chain (the only ones that can receive custody).
+  useEffect(() => {
+    let isMounted = true;
+    custodyApi
+      .eligibleRecipients("PHARMACY")
+      .then((res) => {
+        if (!isMounted) return;
+        setPharmacies(res.data);
+        if (res.data.length > 0) {
+          setSelectedPharmacyId(res.data[0].id);
+          setCustomPharmacyWallet(res.data[0].walletAddress);
+        }
+      })
+      .catch((err: any) => {
+        if (isMounted) setInlineError(err?.message || "Failed to load pharmacies.");
+      })
+      .finally(() => {
+        if (isMounted) setPharmaciesLoading(false);
+      });
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  const selectedPharmacy = pharmacies.find((p) => p.id === selectedPharmacyId);
+  const pharmacyName = selectedPharmacy?.organization?.name || "Pharmacy";
   const selectedBatch = batches.find((b) => b.id === selectedBatchId);
 
   const txFlow = useTxFlow({
     prepare: async () => {
       setInlineError(null);
       if (!selectedBatch) throw new Error("No batch selected for transfer");
-      const targetAddress = customPharmacyWallet.trim() || selectedPharmacy.address;
+      const targetAddress = customPharmacyWallet.trim();
       try {
         return await custodyApi.prepareTransfer({
           batchId: selectedBatch.id,
@@ -99,10 +124,10 @@ function DistributorTransferContent() {
       }
     },
     title: "Dispatch to Licensed Pharmacy",
-    description: `Transferring custody of ${selectedBatch?.id || 'batch'} to ${selectedPharmacy.name} on Arbitrum Sepolia...`,
+    description: `Transferring custody of ${selectedBatch?.id || 'batch'} to ${pharmacyName} on Base Sepolia...`,
     onSuccess: ({ txHash }) => {
       if (!selectedBatch) return;
-      const targetAddress = customPharmacyWallet.trim() || selectedPharmacy.address;
+      const targetAddress = customPharmacyWallet.trim();
       const newCustodyEvent: CustodyEvent = {
         id: `cust-${Date.now()}`,
         timestamp: new Date().toISOString(),
@@ -110,7 +135,7 @@ function DistributorTransferContent() {
         actorRole: "Distributor",
         actorName: currentStakeholder?.name || "SwiftLogistics Health",
         actorAddress: address || "0x3A2...98b1",
-        toActorName: selectedPharmacy.name,
+        toActorName: pharmacyName,
         toActorAddress: targetAddress,
         txHash,
         blockNumber: 0,
@@ -123,7 +148,7 @@ function DistributorTransferContent() {
         ...selectedBatch,
         status: "InTransit",
         currentCustodianRole: "Pharmacy",
-        currentCustodianName: selectedPharmacy.name,
+        currentCustodianName: pharmacyName,
         currentCustodianAddress: targetAddress,
         custodyTimeline: [...selectedBatch.custodyTimeline, newCustodyEvent],
       };
@@ -202,12 +227,21 @@ function DistributorTransferContent() {
             </label>
             <select
               value={selectedPharmacyId}
-              onChange={(e) => setSelectedPharmacyId(e.target.value)}
+              disabled={pharmaciesLoading}
+              onChange={(e) => {
+                setSelectedPharmacyId(e.target.value);
+                const ph = pharmacies.find((x) => x.id === e.target.value);
+                if (ph) setCustomPharmacyWallet(ph.walletAddress);
+              }}
               className="w-full px-4 py-3 rounded-xl border border-gray-200 text-xs font-semibold focus:ring-2 focus:ring-indigo-500 focus:outline-none bg-white"
             >
+              {pharmaciesLoading && <option value="">Loading pharmacies...</option>}
+              {!pharmaciesLoading && pharmacies.length === 0 && (
+                <option value="">No registered pharmacies</option>
+              )}
               {pharmacies.map((p) => (
                 <option key={p.id} value={p.id}>
-                  {p.name} ({p.location}) — License: {p.licenseNumber}
+                  {p.organization?.name || "Unnamed pharmacy"} — {p.walletAddress.slice(0, 6)}…{p.walletAddress.slice(-4)}
                 </option>
               ))}
             </select>
@@ -215,7 +249,7 @@ function DistributorTransferContent() {
 
           <div>
             <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1.5">
-              Destination Pharmacy Node Wallet (Arbitrum Sepolia):
+              Destination Pharmacy Node Wallet (Base Sepolia):
             </label>
             <input
               type="text"
